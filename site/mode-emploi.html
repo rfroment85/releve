@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Mode d’emploi · Relève</title>
+<link rel="icon" href="img/icon.png">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="wrap narrow">
+  <header class="top">
+    <a class="brand" href="./"><span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z"/><path d="M10 13l2 2 4-4"/></svg></span>Relève</a>
+    <nav><a href="mode-emploi.html" class="on">Mode d’emploi</a><a href="confidentialite.html">Confidentialité</a></nav>
+  </header>
+
+  <button class="btn print" onclick="window.print()">Imprimer</button>
+  <h1 style="font-size:34px">Mode d’emploi</h1>
+  <p class="lead" style="font-size:17px">Installation une seule fois, en 3 minutes. Ensuite, un clic suffit.</p>
+  <div class="toc"><a href="#installer">1. Installer</a><a href="#utiliser">2. Utiliser</a><a href="#controles">Contrôles</a><a href="#claude">Avec Claude</a><a href="#mise-a-jour">3. Mettre à jour</a><a href="#questions">Questions</a></div>
+
+  <!-- ============ INSTALLER ============ -->
+  <div class="part" id="installer">
+    <div class="h"><h2>1. Installer</h2><span class="t">3 minutes, une seule fois</span></div>
+    <ol class="steps">
+      <li><b class="t">Téléchargez le fichier</b>
+        <p><a class="btn primary" href="Releve.zip" download style="padding:8px 14px;font-size:15px;margin-top:4px">Télécharger Releve.zip</a></p>
+        <p>Il arrive dans votre dossier <b>Téléchargements</b>.</p></li>
+      <li><b class="t">Décompressez-le dans Documents</b>
+        <p>Dans Téléchargements, faites un <b>clic droit</b> sur <b>Releve.zip</b>, puis <b>Extraire tout…</b></p>
+        <p>Cliquez sur <b>Parcourir…</b>, choisissez <b>Documents</b>, puis <b>Extraire</b>.</p>
+        <p>Vous obtenez le dossier <b>Documents › Releve</b>.</p>
+        <div class="warn">Gardez ce dossier à cet endroit et ne le supprimez pas : le navigateur l’utilise en permanence.</div>
+        <p class="edge">Sur Mac : double-cliquez sur le fichier, puis glissez le dossier Releve dans Documents.</p></li>
+      <li><b class="t">Ouvrez la page des extensions</b>
+        <p>Copiez cette adresse dans la barre d’adresse du navigateur, puis appuyez sur Entrée :</p>
+        <p><span class="kbd" id="u1">chrome://extensions</span><button class="copy" data-c="u1">Copier</button></p>
+        <p class="edge">Avec Edge : <span class="kbd" id="u2">edge://extensions</span><button class="copy" data-c="u2">Copier</button></p></li>
+      <li><b class="t">Activez le « Mode développeur »</b>
+        <p>L’interrupteur est en haut à droite (dans Edge : dans la colonne de gauche).</p>
+        <div class="img sm shot"><img src="img/g1-mode-dev.png" alt="Interrupteur Mode développeur" width="480" height="128"></div>
+        <p class="edge">Ce nom technique veut seulement dire « installer une extension depuis un dossier ».</p></li>
+      <li><b class="t">Cliquez sur « Charger l’extension non empaquetée »</b>
+        <p>Choisissez le dossier <b>Documents › Releve</b>, puis <b>Sélectionner un dossier</b>.</p>
+        <div class="img shot"><img src="img/g2-charger.png" alt="Bouton Charger l’extension non empaquetée" width="1240" height="232"></div>
+        <p class="edge">Dans Edge, le bouton s’appelle « Charger l’élément décompressé ».</p>
+        <p>La carte Relève apparaît. <span class="ok">C’est installé.</span></p>
+        <div class="img sm shot" style="max-width:380px"><img src="img/g3-carte.png" alt="Carte Relève dans la page des extensions" width="888" height="480"></div></li>
+      <li><b class="t">Épinglez l’icône</b>
+        <p>Cliquez sur l’icône en forme de <b>pièce de puzzle</b> à droite de la barre d’adresse, puis sur la <b>punaise</b> à côté de Relève.</p>
+        <p class="edge">Dans Edge : puzzle, puis l’icône en forme d’œil.</p>
+        <p>L’icône bleue reste visible en haut à droite.</p></li>
+    </ol>
+  </div>
+
+  <!-- ============ UTILISER ============ -->
+  <div class="part" id="utiliser">
+    <div class="h"><h2>2. Utiliser</h2><span class="t">à chaque campagne</span></div>
+    <ol class="steps">
+      <li><b class="t">Connectez-vous à votre espace professionnel impots.gouv</b>
+        <p>Comme d’habitude. Vous saisissez vous-même vos identifiants.</p></li>
+      <li><b class="t">Cliquez sur l’icône bleue, puis sur « Mettre à jour mes clients »</b>
+        <p>Un volet s’ouvre à droite. Choisissez <b>Mon portefeuille</b> ou <b>Tout le cabinet</b>, puis lancez.</p>
+        <div class="grid2" style="max-width:620px;margin-top:12px"><div class="shot"><img src="img/volet-pret.png" alt="Volet prêt" width="380" height="560"></div><div class="shot"><img src="img/volet-en-cours.png" alt="Mise à jour en cours" width="380" height="720"></div></div>
+        <div class="tip">La première fois, comptez environ 1 à 2 secondes par dossier (une vingtaine de minutes pour 900 dossiers). Ensuite, la mise à jour est rapide : seules les pages susceptibles d’avoir changé sont relues, en général quelques minutes. Le lien « Tout relire » force une lecture complète.</div>
+        <div class="warn">Pendant la mise à jour, travaillez dans un autre onglet, mais ne changez pas de dossier dans l’espace professionnel.</div></li>
+      <li><b class="t">Ouvrez Relève en grand</b>
+        <p>Dans le volet, cliquez sur <b>Ouvrir en grand</b> (en haut à droite) ou sur le logo Relève : l’application complète s’ouvre dans un onglet. Les actions sont classées par urgence. Pour chacune : un bouton (prévenir le client, expliquer la hausse…), une case <b>Fait</b>, et <b>Plus tard</b>.</p>
+        <div class="img shot" style="max-width:100%"><img src="img/liste-travail.png" alt="Liste de travail" width="1200" height="759" loading="lazy"></div>
+        <p>Sous chaque nom, quatre petites icônes : ouvrir l’avis, ajouter une note (« client appelé le 12/11 »), reporter de 7 jours, ouvrir le dossier directement sur impots.gouv.</p>
+        <div class="tip"><b>Gagner du temps :</b> cochez plusieurs lignes (case à gauche), puis « Préparer les messages » : un seul brouillon par client, qui regroupe tous ses points (paiement, hausse, créance, prélèvement) avec les avis joints.</div>
+        <p>Cliquez sur un nom pour ouvrir la fiche du client : l’explication de la hausse, collectivité par collectivité, le contrôle de la CFE et vos notes.</p>
+        <div class="img shot" style="max-width:100%"><img src="img/fiche-client.png" alt="Fiche client" width="1100" height="713" loading="lazy"></div>
+        <p>« Préparer le message » télécharge un brouillon : cliquez dessus en bas du navigateur, il s’ouvre dans Outlook avec l’avis joint. <b>Rien n’est envoyé sans vous.</b></p>
+        <p class="edge">Données fictives sur les captures.</p></li>
+    </ol>
+    <div class="card" style="margin-top:14px"><h3>Facultatif : travailler sur votre portefeuille</h3><p>Dans <b>Réglages</b>, importez le fichier des dossiers du cabinet (export CSV avec SIREN, code dossier, collaborateur, e-mail) et choisissez votre nom, ou collez simplement la liste de vos SIREN. Les e-mails des clients sont alors préremplis dans les messages.</p></div>
+  </div>
+
+  <!-- ============ CONTRÔLES ============ -->
+  <div class="part" id="controles">
+    <div class="h"><h2>Contrôles et alertes</h2><span class="t">facultatif, dans Réglages</span></div>
+    <div class="grid2" style="margin-top:16px">
+      <div class="card"><h3>Base minimum de CFE</h3><p>Importez un fichier (Excel ou CSV) avec, par client : SIREN, date de clôture, durée en mois, chiffre d’affaires HT, et si possible la date de création. Relève signale les clients imposés à tort (CA ≤ 5 000 €, base au-dessus du plafond de la tranche, CFE l’année de création) et prépare le brouillon de réclamation. Un modèle de fichier est proposé dans Réglages.</p></div>
+      <div class="card"><h3>Prélèvement à proposer</h3><p>Les clients ni prélevés ni mensualisés deux années de suite apparaissent dans « Prélèvement à proposer », avec un message prêt pour les inciter à adhérer : autant de relances en moins l’an prochain.</p></div>
+      <div class="card"><h3>Réclamations</h3><p>Pour une hausse de bases de taxe foncière ou une base minimum de CFE contestable, « Préparer la réclamation » rédige le courrier chiffré. Vous le relisez, le complétez et le déposez vous-même par la messagerie sécurisée.</p></div>
+      <div class="card"><h3>Alertes et bandeau</h3><p>Une notification vous prévient 7 jours et la veille d’une échéance, quand les avis de solde de CFE sont attendus et à la fin d’une longue mise à jour. Sur impots.gouv, un petit bandeau signale les actions en attente du dossier consulté. Les deux se désactivent dans Réglages.</p></div>
+    </div>
+  </div>
+
+  <!-- ============ DEMANDER ============ -->
+  <div class="part" id="demander">
+    <div class="h"><h2>Demander</h2><span class="t">questions prêtes et filtres</span></div>
+    <p style="color:var(--ink2)">Dans l’application Relève, ouvrez <b>Demander</b> et cliquez une question : « À prévenir sous 7 jours », « Créances échues », « Plus fortes hausses », « Bilan de la campagne »… Affinez si besoin avec les filtres (taxe, commune, collaborateur, échéance, montant mini). La réponse affiche les clients concernés avec les boutons habituels : préparer le message, marquer fait, ouvrir sur impots.gouv.</p>
+    <p class="edge">Les résultats sont calculés sur votre poste à partir des avis lus : ils sont exacts et rien n’est envoyé.</p>
+  </div>
+
+  <!-- ============ HABILITATIONS ============ -->
+  <div class="part" id="habilitations">
+    <div class="h"><h2>Habilitations et clients à raccorder</h2><span class="t">menu « Habilitations »</span></div>
+    <div class="grid2" style="margin-top:12px">
+      <div class="card"><h3>Habilitations</h3><p>« Lire mes habilitations » (environ 30 secondes) affiche, pour chaque dossier, les services auxquels votre compte a accès, votre rôle (titulaire, suppléant, délégant, acteur) et leur état. Filtres par service, rôle, état et collaborateur. Pour un service, « Dossiers SANS ce service » liste ceux où il manque (jamais attribué, supprimé ou en veille) ; à droite, le décompte avec / sans de chaque service. « Exporter la sélection » produit un fichier Excel de ce qui est affiché, filtres compris ; « Tout exporter » ajoute la matrice dossiers × services. Toute la liste s’affiche, sans limite de nombre. Relève lit la page « Gérer mon espace › Consulter mes services » et ne modifie rien : pour changer une habilitation, passez par impots.gouv.</p></div>
+      <div class="card"><h3>Clients à raccorder</h3><p>Avec le fichier des dossiers importé dans Réglages, Relève liste les clients absents de votre espace (ou sans accès au compte fiscal), souvent parce qu’ils ont leur propre espace. Pour chacun, un message prêt leur explique comment désigner le cabinet comme administrateur suppléant avec votre numéro d’abonné ; le suivi indique « demandé », « à relancer » après 7 jours, puis « raccordé » dès que le dossier apparaît.</p></div>
+    </div>
+    <p class="edge">Le numéro d’abonné du cabinet est lu automatiquement avec les habilitations ; vous pouvez le corriger en haut de la liste « Clients à raccorder ». Relève ne demande ni ne conserve jamais les identifiants de vos clients.</p>
+  </div>
+
+  <!-- ============ CLAUDE ============ -->
+  <div class="part" id="claude">
+    <div class="h"><h2>Utiliser avec Claude</h2><span class="t">facultatif, 2 minutes</span></div>
+    <p style="color:var(--ink2)">Si vous avez l’application Claude sur votre ordinateur, vous pouvez interroger Relève en langage courant : « quels clients doivent payer avant le 15/12 sans prélèvement ? », « explique-moi la hausse de la SCI Les Pins et prépare le message », « marque comme faits les rappels envoyés ce matin ».</p>
+    <ol class="steps">
+      <li><b class="t">Installez le connecteur dans Claude</b>
+        <p><a class="btn primary" href="Releve-Claude.mcpb" download style="padding:8px 14px;font-size:15px;margin-top:4px">Télécharger le connecteur pour Claude</a></p>
+        <p>Double-cliquez sur le fichier <b>Releve-Claude.mcpb</b> : l’application Claude s’ouvre et propose de l’installer. Cliquez sur <b>Installer</b>. (Sinon : Claude › Paramètres › Extensions, puis glissez le fichier.)</p></li>
+      <li><b class="t">Activez la connexion dans Relève</b>
+        <p>Réglages › <b>Connexion à Claude</b> : cochez « Activer la connexion à Claude sur ce poste ». L’état passe à « Connecté à Claude » en moins d’une minute.</p>
+        <div class="warn">Une fois activée, les informations que Claude demande (noms, montants, situation fiscale des clients) lui sont transmises pour répondre. Utilisez un compte Claude du cabinet et respectez votre charte IA. Cochez l’option « Masquer les noms et SIREN » : Claude voit « Client 4F2A » au lieu du nom, et vous lisez ses réponses avec les vrais noms dans Relève.</div></li>
+      <li><b class="t">Posez vos questions dans Claude</b>
+        <p>Laissez Chrome (ou Edge) ouvert. Commencez par exemple par « Relève : fais-moi le point sur la campagne ».</p>
+        <p class="edge">Claude prépare des brouillons ; il n’envoie rien, ne paie rien et ne touche pas au site des impôts. Pour créer un brouillon Outlook avec les avis joints, il ouvre la fenêtre de message de Relève et vous validez.</p></li>
+      <li><b class="t">Lisez la réponse avec les vrais noms</b>
+        <p>Avec les noms masqués, Claude ne voit que « Client 4F2A ». Il envoie sa réponse dans Relève, menu <b>Demander › Réponses de Claude</b>, qui s’ouvre tout seul : les pseudonymes y sont remplacés par les vrais noms, sur votre poste, et chaque nom ouvre la fiche du client. Si Claude oublie, copiez sa réponse et collez-la dans « Coller une réponse de Claude ».</p></li>
+    </ol>
+  </div>
+
+  <!-- ============ MISE À JOUR ============ -->
+  <div class="part" id="mise-a-jour">
+    <div class="h"><h2>3. Mettre à jour</h2><span class="t">1 minute, quand l’extension vous le signale</span></div>
+    <p style="color:var(--ink2)">Un bandeau bleu « Nouvelle version disponible » apparaît dans le volet. Vos données sont conservées.</p>
+    <ol class="steps">
+      <li><b class="t">Téléchargez la nouvelle version</b><p>Bouton <b>Télécharger</b> du bandeau, ou <a href="Releve.zip" download>ce lien</a>.</p></li>
+      <li><b class="t">Décompressez-la au même endroit</b><p>Clic droit, <b>Extraire tout…</b>, <b>Parcourir…</b>, <b>Documents</b>, <b>Extraire</b>, puis <b>Remplacer les fichiers</b>.</p></li>
+      <li><b class="t">Rechargez l’extension</b><p>Dans <span class="kbd">chrome://extensions</span>, cliquez sur la flèche circulaire de la carte Relève.</p>
+        <div class="img sm shot" style="max-width:380px"><img src="img/g5-recharger.png" alt="Bouton recharger de la carte Relève" width="888" height="480"></div></li>
+    </ol>
+    <div class="tip" style="margin-top:14px"><b>Vous aviez « Avis Collector » ?</b> L’outil s’appelle désormais Relève et son dossier <b>Releve</b>. Décompressez Releve.zip dans Documents, puis dans <span class="kbd">chrome://extensions</span> cliquez sur <b>Charger l’extension non empaquetée</b> et choisissez <b>Documents › Releve</b>. Lancez ensuite une mise à jour : les avis sont relus. Les actions marquées faites et les notes d’Avis Collector ne sont pas reprises.</div>
+    <div class="warn" style="margin-top:14px">N’utilisez pas « Supprimer » pour mettre à jour : supprimer l’extension efface les avis et votre liste de travail sur ce poste.</div>
+  </div>
+
+  <!-- ============ QUESTIONS ============ -->
+  <div class="part" id="questions">
+    <h2>Questions</h2>
+    <details><summary>« Fichier manifeste manquant ou illisible »</summary><p>Vous avez choisi le mauvais dossier. Ouvrez les dossiers Releve jusqu’à voir un fichier nommé <b>manifest.json</b> : c’est ce dossier-là qu’il faut sélectionner.</p></details>
+    <details><summary>Le navigateur propose de désactiver les extensions en mode développeur</summary><p>Fermez simplement le message (croix ou « Annuler »). Il concerne les extensions installées depuis un dossier, comme celle-ci.</p></details>
+    <details><summary>Je ne trouve pas le « Mode développeur »</summary><p>Certains postes gérés par un service informatique le bloquent. Dans ce cas, votre prestataire peut installer Relève sur tous les postes du cabinet en une seule opération : transmettez-lui cette page.</p></details>
+    <details><summary>Où sont mes données ? Qui peut les voir ?</summary><p>Uniquement dans le navigateur de votre poste. Aucun serveur ne reçoit vos avis ni vos analyses. Le seul échange avec ce site est la vérification d’une nouvelle version (aucune donnée envoyée). Détails : <a href="confidentialite.html">confidentialité</a>.</p></details>
+    <details><summary>Qu’est-ce que l’extension fait sur le site des impôts ?</summary><p>Elle lit trois pages de votre espace : avis de CFE, avis de taxe foncière et situation de la dette fiscale, dossier par dossier, comme vous le feriez à la main. Elle ne paie rien, n’envoie aucun message, ne touche pas à la messagerie et ne modifie rien.</p></details>
+    <details><summary>D’où viennent les créances de la liste « Créance échue » ?</summary><p>De deux pages de l’espace professionnel : <b>Compte fiscal › Synthèses › Dettes fiscales</b> (soldes non réglés, CFE, prélèvement à la source…) et <b>Payer › Dette fiscale</b> (avis de mise en recouvrement : pénalités, majorations, rappels). Relève lit seulement la liste des documents à payer : il ne lance aucun paiement. Les reliquats de quelques centimes sont ignorés (seuil réglable dans Réglages).</p></details>
+    <details><summary>La mise à jour s’est arrêtée (« session expirée »)</summary><p>Le site des impôts déconnecte après un moment. Reconnectez-vous et relancez : les avis déjà lus ne sont pas relus.</p></details>
+    <details><summary>Plusieurs collaborateurs, plusieurs postes ?</summary><p>Chacun installe l’extension sur son poste et choisit « Mon portefeuille ». Les données ne sont pas partagées entre postes.</p></details>
+    <details><summary>Claude dit qu’Relève n’est pas joignable</summary><p>Vérifiez que Chrome (ou Edge) est ouvert, que l’extension est à jour et que « Connexion à Claude » est cochée dans ses Réglages. La liaison se rétablit seule en moins d’une minute. Si deux fenêtres de l’application Claude sont ouvertes, fermez-en une.</p></details>
+    <details><summary>Sauvegarder mes données, changer de poste</summary><p>Réglages › <b>Sauvegarde</b> › « Sauvegarder mes données » enregistre un fichier <b>Releve-sauvegarde-AAAA-MM-JJ.json</b> avec vos actions faites ou reportées, vos notes, vos réglages, le fichier des dossiers, les chiffres d’affaires et les réponses de Claude. Sur le nouveau poste (ou après une réinstallation), « Restaurer une sauvegarde… » les remet, puis une mise à jour relit les avis. Faites-le avant toute réinstallation : désinstaller l’extension efface tout.</p></details>
+    <details><summary>Le code source est-il disponible ?</summary><p>Oui, sous licence libre EUPL 1.2 : <a href="https://github.com/rfroment85/releve">github.com/rfroment85/releve</a>. Vous pouvez le lire, l’adapter à votre cabinet et proposer des améliorations. Seule la version téléchargée sur ce site est la version officielle.</p></details>
+    <details><summary>Désinstaller</summary><p>Dans <span class="kbd">chrome://extensions</span>, « Supprimer » sur la carte Relève, puis supprimez le dossier Documents › Releve. Les données sont effacées avec l’extension.</p></details>
+  </div>
+</div>
+<footer><div class="wrap narrow">Créé par <a href="https://www.linkedin.com/in/romain-froment-expert-comptable-var/" rel="noopener">Romain Froment</a>, expert-comptable · Relève · outil indépendant, non affilié à la DGFiP · <a href="./">Accueil</a> · <a href="confidentialite.html">Confidentialité</a></div></footer>
+<script>
+document.querySelectorAll('.copy').forEach(function (b) { b.onclick = function () { navigator.clipboard.writeText(document.getElementById(b.dataset.c).textContent).then(function () { b.textContent = 'Copié'; setTimeout(function () { b.textContent = 'Copier'; }, 1500); }); }; });
+</script>
+</body>
+</html>

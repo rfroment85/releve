@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "Relève",
+  "short_name": "Relève",
+  "version": "5.2.3",
+  "description": "Avis de CFE et de taxe foncière de tous vos clients, analysés et classés par urgence, depuis votre espace professionnel impots.gouv. Données conservées sur votre poste.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsfRLa6JTSgJd4PQ93tvuRZGR5+qdMe/RilwebRgKRtGeZt+J81799iyseAe9g0fVwSTNutfKen2Tr8etHALsqQdll+gTRSReQy1LFkSdtUm1oG+aYYNPniNVlgXgydf0RxBGuuY0UEBSFX2Gw2LsLhdPLS4HoiLVGZQY08hW7LMcXic62ETQi5G31gh7f90DPXNfef7A0N6RPA3pS9KO5kKGTCxJGfJIMBVsdwJyqXq47JM8j2TsNrm/j6TzajC8bN21vcIbvVeNMQNjBUvXS5eRVE/xDFa0tpPyt1fzBX7KhABCTe/vkF1rd8Kz5Z1QtiiRTqESQNdo1qiVFrwzZQIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "alarms",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://cfspro.impots.gouv.fr/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Relève",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://cfspro.impots.gouv.fr/*"
+      ],
+      "js": [
+        "content.bundle.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "homepage_url": "https://releveavis.netlify.app/",
+  "author": "Romain Froment"
+}

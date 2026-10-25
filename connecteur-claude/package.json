@@ -1,0 +1,14 @@
+{
+  "name": "avis-collector-mcp",
+  "version": "1.1.2",
+  "private": true,
+  "description": "Connecteur MCP local entre Claude et l'extension Avis Collector",
+  "type": "module",
+  "main": "server/index.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "ws": "8.22.0",
+    "zod": "4.6.5"
+  },
+  "author": "Romain Froment (https://www.linkedin.com/in/romain-froment-expert-comptable-var/)"
+}

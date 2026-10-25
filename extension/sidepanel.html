@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relève</title>
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+<header class="top">
+  <button class="brandbtn" id="brand" title="Ouvrir Relève en grand"><span class="logo" id="logo"></span>
+  <span class="tt"><b>Relève</b><span class="tiny muted" id="sub">Taxe foncière et CFE de vos clients</span></span></button>
+  <button class="btn sm" id="openApp" title="Ouvrir Relève en grand, dans un onglet"><span id="expIco"></span> Ouvrir en grand</button>
+</header>
+<div id="upd"></div>
+<main id="view"></main>
+<footer class="foot tiny muted"><span id="lockIco"></span> Données conservées sur ce poste. Vos identifiants ne sont jamais lus.</footer>
+<div class="toast" id="toast"></div>
+<script src="lib/icons.js"></script>
+<script src="lib/db.js"></script>
+<script src="lib/analyse.js"></script>
+<script src="lib/update.js"></script>
+<script src="sidepanel.js"></script>
+</body>
+</html>

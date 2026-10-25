@@ -1,0 +1,17 @@
+/*
+  X-Robots-Tag: noindex, nofollow
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+
+/version.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: no-cache
+  Content-Type: application/json; charset=utf-8
+
+/Releve.zip
+  Content-Type: application/zip
+  Cache-Control: no-cache
+
+/Releve-Claude.mcpb
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment; filename="Releve-Claude.mcpb"

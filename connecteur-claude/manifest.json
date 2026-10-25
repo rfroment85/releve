@@ -1,0 +1,111 @@
+{
+  "manifest_version": "0.2",
+  "name": "avis-collector",
+  "display_name": "Relève",
+  "version": "1.1.2",
+  "description": "Interrogez vos avis de taxe foncière et de CFE (Relève) directement depuis Claude.",
+  "long_description": "Connecteur local entre Claude et l'extension Relève pour Chrome ou Edge. Claude peut consulter la liste de travail, la fiche d'un client, l'explication des hausses et l'évolution par collectivité, préparer des brouillons de messages et de réclamations, marquer des actions comme faites et lancer une mise à jour. Les données restent dans l'extension sur ce poste ; seules les informations demandées par Claude lui sont transmises, si la connexion est activée dans les réglages d'Relève (option de masquage des noms). Aucun paiement, aucun envoi de message, aucune modification sur le site des impôts.",
+  "author": {
+    "name": "Romain Froment",
+    "url": "https://www.linkedin.com/in/romain-froment-expert-comptable-var/"
+  },
+  "homepage": "https://releveavis.netlify.app/",
+  "documentation": "https://releveavis.netlify.app/mode-emploi.html#claude",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/index.js"
+      ],
+      "env": {
+        "AC_PORT": "${user_config.port}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "resume",
+      "description": "Vue d'ensemble de la campagne"
+    },
+    {
+      "name": "lister_actions",
+      "description": "Liste de travail par urgence"
+    },
+    {
+      "name": "lister_clients",
+      "description": "Clients, montants, évolution"
+    },
+    {
+      "name": "fiche_client",
+      "description": "Tout sur un client"
+    },
+    {
+      "name": "collectivites",
+      "description": "Évolution par collectivité"
+    },
+    {
+      "name": "preparer_message",
+      "description": "Brouillon de message client"
+    },
+    {
+      "name": "preparer_reclamation",
+      "description": "Brouillon de réclamation"
+    },
+    {
+      "name": "marquer_actions",
+      "description": "Marquer fait, reporter, noter"
+    },
+    {
+      "name": "noter_client",
+      "description": "Note dans la fiche client"
+    },
+    {
+      "name": "ouvrir_dans_releve",
+      "description": "Ouvrir une vue ou un client"
+    },
+    {
+      "name": "afficher_dans_releve",
+      "description": "Afficher la réponse avec les vrais noms dans Relève"
+    },
+    {
+      "name": "lancer_mise_a_jour",
+      "description": "Relire les avis sur impots.gouv"
+    },
+    {
+      "name": "etat_mise_a_jour",
+      "description": "Avancement de la mise à jour"
+    }
+  ],
+  "keywords": [
+    "expert-comptable",
+    "CFE",
+    "taxe foncière",
+    "impots.gouv"
+  ],
+  "privacy_policies": [
+    "https://releveavis.netlify.app/confidentialite.html"
+  ],
+  "compatibility": {
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  },
+  "user_config": {
+    "port": {
+      "type": "number",
+      "title": "Port local",
+      "description": "Port de liaison avec l'extension (laisser 47831 sauf conflit).",
+      "default": 47831,
+      "required": false,
+      "min": 1024,
+      "max": 65535
+    }
+  }
+}

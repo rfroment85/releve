@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Confidentialité · Relève</title>
+<link rel="icon" href="img/icon.png">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="wrap narrow">
+  <header class="top">
+    <a class="brand" href="./"><span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z"/><path d="M10 13l2 2 4-4"/></svg></span>Relève</a>
+    <nav><a href="mode-emploi.html">Mode d’emploi</a><a href="confidentialite.html" class="on">Confidentialité</a></nav>
+  </header>
+  <h1 style="font-size:34px">Confidentialité</h1>
+  <p class="lead" style="font-size:17px">En bref : Relève ne collecte aucune donnée. Tout reste sur votre poste, sauf si vous activez la connexion facultative à Claude.</p>
+  <div class="card" style="margin-bottom:14px"><h3>Ce que l’extension lit</h3><p>Dans votre espace professionnel impots.gouv.fr, ouvert et connecté par vous : la liste de vos dossiers, les avis de CFE, les avis de taxe foncière (tableaux et PDF) et la situation de la dette fiscale de chaque dossier ; à votre demande, la liste de vos habilitations (« Gérer mon espace › Consulter mes services »), sans rien y modifier. Elle n’a accès à aucun autre site.</p></div>
+  <div class="card" style="margin-bottom:14px"><h3>Où vont les données</h3><p>Nulle part. Les avis, les PDF, les analyses, vos réglages et l’état de votre liste de travail sont stockés dans le navigateur de votre poste (stockage local de l’extension). Ils ne sont transmis à aucun serveur, ni à l’éditeur, ni à un tiers. Les exports (Excel, ZIP, brouillons de mails) sont créés sur votre poste quand vous les demandez.</p></div>
+  <div class="card" style="margin-bottom:14px"><h3>Ce que l’extension ne fait pas</h3><p>Elle ne lit pas vos identifiants, ne paie rien, n’envoie aucun message, ne consulte pas la messagerie sécurisée et ne modifie rien sur le site des impôts. Elle ne contient ni publicité, ni mesure d’audience, ni traceur.</p></div>
+  <div class="card" style="margin-bottom:14px"><h3>Seul échange réseau hors impots.gouv</h3><p>Pour vous signaler une nouvelle version, l’extension lit au plus toutes les 6 heures le fichier public releveavis.netlify.app/version.json. Aucune donnée n’est envoyée à cette occasion.</p></div>
+  <div class="card" style="margin-bottom:14px"><h3>Connexion à Claude (facultative)</h3><p>Désactivée par défaut. Si vous l’activez et installez le connecteur Relève dans l’application Claude, l’extension répond aux questions de Claude via une liaison locale réservée à ce poste (127.0.0.1, seule l’extension Relève est acceptée). Les informations nécessaires à chaque réponse sont alors transmises à Claude, selon les conditions de votre compte Claude. Une option masque les noms et SIREN des clients : Claude ne voit que des pseudonymes (« Client 4F2A »), et ses réponses sont réaffichées avec les vrais noms dans Relève, sur votre poste, sans que les noms ne lui soient transmis.</p></div>
+  <div class="card"><h3>Effacer les données</h3><p>Réglages › « Effacer toutes les données », ou désinstallation de l’extension : tout est supprimé du poste. Le fichier de sauvegarde, si vous en créez un (Réglages › Sauvegarde), reste dans le dossier où vous l’avez enregistré : traitez-le comme un document client.</p></div>
+  <p class="note" style="margin-top:20px">Le code source de Relève est public (licence EUPL 1.2) : chacun peut vérifier ce que fait l’extension sur <a href="https://github.com/rfroment85/releve">github.com/rfroment85/releve</a>. Relève est un outil indépendant, non affilié à la DGFiP ni à impots.gouv.fr.</p>
+</div>
+<footer><div class="wrap narrow">Créé par <a href="https://www.linkedin.com/in/romain-froment-expert-comptable-var/" rel="noopener">Romain Froment</a>, expert-comptable · <a href="./">Accueil</a> · <a href="mode-emploi.html">Mode d’emploi</a></div></footer>
+</body>
+</html>
