@@ -186,7 +186,7 @@ const ACVL = (() => {
     const gain = sims.filter((s) => s.simulation && s.simulation.gain > 100);
     if (gain.length) return { code: 'ROUGE', texte: `Anomalie probable : ${minu(gain[0].titre)} — gain estimé ${Math.round(gain[0].simulation.gain).toLocaleString('fr-FR')} € par an` };
     if (sims.some((s) => s.gravite >= 2)) return { code: 'ORANGE', texte: 'À vérifier avec le client : ' + minu(sims.find((s) => s.gravite >= 2).titre) };
-    if (ecart !== null && Math.abs(ecart) > 0.05) return { code: 'ORANGE', texte: `La base calculée s’écarte de ${(ecart * 100).toFixed(0)} % de l’avis${ref && ref.partage ? ' (adresse partagée avec d’autres biens : la base de l’avis les inclut)' : rec && !rec.planchonnement ? ' (pas de trace de planchonnement : local récent ou avis sans lissage)' : ''} : surfaces ou catégorie à confirmer` };
+    if (ecart !== null && Math.abs(ecart) > 0.05) return { code: 'ORANGE', texte: `La base calculée est ${ecart < 0 ? 'inférieure' : 'supérieure'} de ${Math.abs(ecart * 100).toFixed(0)} % à l’avis${ref && ref.partage ? ' (adresse partagée avec d’autres biens : la base de l’avis les inclut)' : rec && !rec.planchonnement ? ' (pas de trace de planchonnement : local récent ou avis sans lissage)' : ''} : surfaces ou catégorie à confirmer` };
     if (ecart !== null) return { code: 'VERT', texte: 'Base de l’avis reproduite au tarif de la grille (écart ' + (ecart * 100).toFixed(1).replace('.', ',') + ' %) : pas d’erreur de calcul' + (rec && rec.planchonnement ? ' ; le planchonnement explique l’écart avec le tarif brut' : '') };
     return { code: 'GRIS', texte: 'Pas d’avis rapproché : calcul au tarif seul' };
   }
@@ -260,7 +260,7 @@ const ACVL = (() => {
           if (l.exclu) continue;
           const v = verdict(ecart, an.signaux, recon, ref);
           if (v.code === 'VERT') v.texte = `Base de l’avis reproduite au tarif pour les ${G.length} locaux de cette adresse (écart ${(ecart * 100).toFixed(1).replace('.', ',')} %) : pas d’erreur de calcul d’ensemble` + (vl70 ? ' ; le planchonnement explique l’écart avec le tarif brut' : '');
-          else if (v.code === 'ORANGE' && ecart !== null && Math.abs(ecart) > 0.05 && !an.signaux.some((x) => x.gravite >= 2)) v.texte = `Pour les ${G.length} locaux de cette adresse, la base calculée (${Math.round(baseG).toLocaleString('fr-FR')} €) s’écarte de ${(ecart * 100).toFixed(0)} % de la base de l’avis (${Math.round(ref.base).toLocaleString('fr-FR')} €)` + (ok.length < G.length ? ` ; ${G.length - ok.length} local${G.length - ok.length > 1 ? 'aux' : ''} non calculé${G.length - ok.length > 1 ? 's' : ''}` : '') + (vl70 ? '' : ' ; sans ligne de lissage sur l’avis, le planchonnement n’a pas pu être reconstitué');
+          else if (v.code === 'ORANGE' && ecart !== null && Math.abs(ecart) > 0.05 && !an.signaux.some((x) => x.gravite >= 2)) v.texte = `Pour les ${G.length} locaux de cette adresse, la base calculée (${Math.round(baseG).toLocaleString('fr-FR')} €) est ${ecart < 0 ? 'inférieure' : 'supérieure'} de ${Math.abs(ecart * 100).toFixed(0)} % à la base de l’avis (${Math.round(ref.base).toLocaleString('fr-FR')} €)` + (ok.length < G.length ? ` ; ${G.length - ok.length} local${G.length - ok.length > 1 ? 'aux' : ''} non calculé${G.length - ok.length > 1 ? 's' : ''}` : '') + (vl70 ? '' : ' ; sans ligne de lissage sur l’avis, le planchonnement n’a pas pu être reconstitué');
           an.verdict = v;
           l.gain = Math.max(0, ...an.signaux.map((x) => (x.simulation && x.simulation.gain) || 0));
         }
