@@ -46,6 +46,7 @@
       <li><b>La fiche de chaque local professionnel</b> dans « Gérer mes biens immobiliers » de l’espace professionnel (service à déléguer au cabinet par le client) : numéro fiscal du local, adresse, références cadastrales de la parcelle, catégorie, surface des parties principales, surfaces secondaires couvertes et non couvertes, parkings couverts et non couverts, droit (propriétaire, bailleur ou preneur d’un bail à construction…). Les biens d’habitation sont comptés mais pas contrôlés : la révision ne les concerne pas.</li>
       <li><b>Les déclarations attendues</b> par l’administration (permis de construire, déclaration préalable non suivis d’une déclaration foncière), qui apparaissent dans la même page.</li>
       <li><b>Le détail par adresse de l’avis de taxe foncière</b> : base, cotisation et cotisation lissée de la part communale. Les avis déjà présents sur votre poste sont relus une fois pour en extraire ce détail.</li>
+      <li><b>Le cadastre</b>, sur la Géoplateforme de l’IGN (service public, sans compte) : la surface de la parcelle de chaque local et l’emprise au sol des bâtiments qui s’y trouvent, avec leur nombre de niveaux estimé. Seule la référence cadastrale (commune, section, numéro) est transmise à l’IGN : ni le nom du client, ni le SIREN, ni l’adresse. Lecture automatique, une fois par an par parcelle, désactivable dans Réglages.</li>
     </ul>
     <p>Rien n’est saisi, rien n’est déclaré : Relève n’ouvre que la liste des biens et la page « Consulter un bien ». Comme pour le reste, vos données restent dans votre navigateur.</p>
   </div>
@@ -83,7 +84,8 @@
       <li><b>Catégorie incompatible avec la surface</b> : MAG1 ou MAG3 (« moins de 400 m² ») avec plus de 400 m² de surface principale ; hypothèse MAG4 ou MAG5.</li>
       <li><b>Catégorie incompatible avec l’activité de l’occupant</b> (code NAF que vous renseignez) : un garage ou une menuiserie en « magasin » plutôt qu’en « atelier », une activité de bureau en « boutique »… ; hypothèse de la catégorie attendue.</li>
       <li><b>Hôtel une étoile ou non classé</b> évalué en 2-3 étoiles (classement que vous renseignez) ; hypothèse HOT3.</li>
-      <li><b>Surfaces</b> : aucune surface secondaire déclarée pour un grand local, dépôt à ciel ouvert entièrement en surface principale, surface principale supérieure à l’emprise du bâti.</li>
+      <li><b>Surfaces</b> : aucune surface secondaire déclarée pour un grand local, dépôt à ciel ouvert entièrement en surface principale.</li>
+      <li><b>Cadastre</b> (lu à l’IGN) : surface principale supérieure à l’emprise au sol du bâti × nombre de niveaux (une partie est peut-être du parking ou du terrain, à pondérer 0,2), surfaces non couvertes déclarées plus grandes que la partie non bâtie de la parcelle, dépôt ou parking déclaré plus grand que la parcelle elle-même. Le nombre de niveaux estimé par l’IGN se corrige dans le simulateur.</li>
       <li><b>Déclaration attendue</b> par l’administration : à régulariser avant toute réclamation, sous peine de rehaussement et de perte de l’exonération temporaire des constructions nouvelles.</li>
     </ul>
     <p>Pour chaque signal, Relève recalcule la base avec l’hypothèse corrigée, planchonnement compris, et en déduit la taxe estimée et le gain par an. Le simulateur de la fiche client vous laisse tester vos propres hypothèses (catégorie, surfaces) en direct.</p>

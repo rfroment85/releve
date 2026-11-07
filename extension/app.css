@@ -287,6 +287,7 @@ body:has(.selbar) .toast { bottom: 84px; }
 .vlq { display: grid; gap: 4px; } .vlq-item { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; padding: 7px 10px; border: 1px solid var(--line2); border-radius: 8px; background: var(--card); font-size: 13px; cursor: pointer; transition: background .12s; }
 .vlq-item:hover { background: #FBFBF9; } .vlq-item input { margin: 2px 0 0; } .vlq-item:has(input:checked) { background: var(--ok-bg); border-color: var(--ok); } .vlq-item:has(input:checked) span { text-decoration: line-through; color: var(--ink3); }
 .vlq-sim { margin-left: 4px; color: var(--accent-d); font-weight: 600; }
+.vlcad { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 10px; background: #FBFBF9; border: 1px solid var(--line2); border-radius: 8px; }
 .vlactions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .vlsim summary { cursor: pointer; color: var(--accent-d); } .vlsim input, .vlsim select { border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; margin-top: 2px; }
 .vlsimres { margin-top: 8px; min-height: 20px; padding: 8px 10px; border-radius: 8px; } .vlsimres:empty { padding: 0; } .vlsimres.flash { animation: vl-flash .9s ease-out; }

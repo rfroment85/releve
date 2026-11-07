@@ -15,7 +15,8 @@
     "notifications"
   ],
   "host_permissions": [
-    "https://cfspro.impots.gouv.fr/*"
+    "https://cfspro.impots.gouv.fr/*",
+    "https://data.geopf.fr/*"
   ],
   "background": {
     "service_worker": "background.js"

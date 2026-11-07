@@ -1,6 +1,15 @@
 // Relève — service d'arrière-plan : range sur le poste ce que la collecte transmet, suit l'avancement, met à jour la pastille.
 'use strict';
-importScripts('lib/db.js', 'lib/analyse.js', 'lib/messages.js', 'lib/avistf.js', 'lib/vl.js', 'lib/mcp.js');
+// Code INSEE d'un bien lu dans GMBI (pour le cadastre) : département de la fiche + code commune des paramètres RVLLP
+const _rvllp = {};
+async function inseeDe(b) {
+  try {
+    const dep = ACVL.depCode((b.fiche || {}).departement) || ACVL.depCode(((b.ville || '').match(/\(([^)]+)\)/) || [])[1]); if (!dep) return '';
+    if (!_rvllp[dep]) _rvllp[dep] = await ACVL.charger(dep);
+    return ACCAD.insee(dep, ACVL.communeCode(_rvllp[dep], b.ville));
+  } catch { return ''; }
+}
+importScripts('lib/db.js', 'lib/analyse.js', 'lib/messages.js', 'lib/avistf.js', 'lib/vl.js', 'lib/cadastre.js', 'lib/mcp.js');
 
 const HOST = 'https://cfspro.impots.gouv.fr/';
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -63,7 +72,10 @@ async function handle(msg, sender) {
       return { ok: true };
     case 'ac:biens': {
       // Biens immobiliers du dossier (fiches GMBI) : remplacés en bloc à chaque lecture ; les saisies de l'utilisateur (occupant, hypothèses) sont dans meta/vl, pas ici
-      await ACDB.put('biens', { siren: msg.siren, nom: msg.nom, biens: msg.biens || [], attendues: msg.attendues || [], indispo: msg.indispo || '', at: Date.now() });
+      const recB = { siren: msg.siren, nom: msg.nom, biens: msg.biens || [], attendues: msg.attendues || [], indispo: msg.indispo || '', at: Date.now() };
+      await ACDB.put('biens', recB);
+      // Cadastre (IGN) : parcelle et bâti de chaque local professionnel, en tâche de fond, sauf si désactivé dans Réglages
+      ACDB.settings().then((S) => { if (S.cadastre === false) return; return ACCAD.completer([recB], { inseeDe: inseeDe }); }).catch(() => {});
       return { ok: true };
     }
     case 'ac:dossier': {

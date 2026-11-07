@@ -21,10 +21,17 @@ const vlStatut = (l) => ACVL.statut(l);
 
 // ---- Préparation : analyse de tous les locaux professionnels lus dans GMBI (lib/vl.js) ----
 async function vlCompute() {
-  VL.locaux = await ACVL.portefeuille({ biens: A.data.biens || [], avis: A.data.avis, saisies: A.data.vl || {}, annee: A.c.annee, correspondance: A.S.correspondance || {}, cache: VL.dep, erreurs: VL.erreursDep });
+  VL.locaux = await ACVL.portefeuille({ biens: A.data.biens || [], avis: A.data.avis, saisies: A.data.vl || {}, annee: A.c.annee, correspondance: A.S.correspondance || {}, cache: VL.dep, erreurs: VL.erreursDep, cadastre: A.data.cadastre || {} });
   for (const l of VL.locaux) l.st = vlStatut(l);
   VL.locaux.sort((x, y) => x.st.ordre - y.st.ordre || (y.st.enjeu || 0) - (x.st.enjeu || 0) || (y.analyse && y.analyse.ref ? y.analyse.ref.base : 0) - (x.analyse && x.analyse.ref ? x.analyse.ref.base : 0));
   return VL.locaux;
+}
+// Cadastre (IGN) : complète en arrière-plan les parcelles non encore lues (une fois par an), puis recalcule
+async function vlCadastre() {
+  if (VL.cadastreEnCours || A.S.cadastre === false) return;
+  const recs = A.data.biens || [];
+  const inseeDe = async (b) => { const l = VL.locaux.find((x) => x.invariant === b.invariant); if (!l || !l.dep || !l.commune) return ''; return ACCAD.insee(l.dep, String(l.commune)); };
+  VL.cadastreEnCours = ACCAD.completer(recs, { inseeDe, pause: 120 }).then(async (r) => { VL.cadastreEnCours = null; if (r.lus || r.erreurs) { A.data.cadastre = (await ACDB.loadAll()).cadastre; await vlCompute(); render(); if (r.lus) toast(`Cadastre : ${plural(r.lus, 'parcelle lue', 'parcelles lues')}`); } }).catch(() => { VL.cadastreEnCours = null; });
 }
 const vlScope = () => { const s = scopeMoi() ? new Set(scopeSirens()) : null; return VL.locaux.filter((l) => (!s || s.has(l.siren)) && match(l.nom, l.siren, l.adresse, l.ville, l.categorie)); };
 const vlDossiersSans = () => (A.data.biens || []).filter((r) => r.indispo);
@@ -115,6 +122,7 @@ const vlLexique = () => `<details class="card" style="margin-top:14px" id="lexiq
       <p><b>Surface pondérée</b> — la surface principale compte pour 1, les surfaces secondaires couvertes (réserves, sanitaires) pour 0,5, les non couvertes pour 0,2, les parkings couverts 0,5 et non couverts 0,2. C’est elle qui est multipliée par le tarif.</p>
     </div>
     <div>
+      <p><b>Cadastre (IGN)</b> — pour chaque parcelle, Relève lit la surface de la parcelle et l’emprise au sol des bâtiments (avec leur nombre de niveaux estimé) sur la Géoplateforme de l’IGN, en ne transmettant que la référence cadastrale. Ça permet de repérer une surface principale supérieure à ce que le bâti peut contenir, ou des surfaces non couvertes plus grandes que la parcelle.</p>
       <p><b>Secteur tarifaire</b> — chaque commune est découpée en secteurs ; le tarif d’une catégorie dépend du secteur où se trouve la section cadastrale du local. <b>Coefficient de localisation</b> : ajustement de ± 30 % au plus, parcelle par parcelle.</p>
       <p><b>Valeur locative brute</b> — surface pondérée × tarif × coefficient de localisation : le loyer annuel théorique du local selon la grille. <b>Neutralisation</b> : coefficient propre à chaque commune (souvent 0,2 à 0,4) qui ramène la valeur révisée de 2017 au niveau des anciennes valeurs.</p>
       <p><b>Planchonnement</b> — pour les locaux qui existaient au 1<sup>er</sup> janvier 2017, la valeur retenue est la moyenne entre la valeur révisée neutralisée et l’ancienne valeur locative (dite « 1970 »). Relève reconstitue cette ancienne valeur à partir de la ligne « cotisation lissée » de l’avis.</p>
@@ -128,7 +136,7 @@ function bindValeurLocative(arg) {
   $$('[data-niv]').forEach((b) => b.onclick = async () => { A.S = await ACDB.saveSettings({ vlNiveau: b.dataset.niv }); A.data.settings = A.S; page(); });
   $$('.vlrow').forEach((r) => r.onclick = (ev) => { if (ev.target.closest('a')) return; location.hash = r.dataset.go; });
   const tb = $('#vlTourBtn'); if (tb) tb.onclick = () => vlTour(true);
-  vlCountUp(); vlMigrer();
+  vlCountUp(); vlMigrer(); vlCadastre();
   if (String(arg || '') === 'lexique') { const e = $('#lexique'); if (e) { e.open = true; setTimeout(() => e.scrollIntoView({ block: 'start' }), 50); } }
   else if (!A.S.vlTourVu && vlBiensStats().dossiers) setTimeout(() => vlTour(false), 600);
 }
@@ -248,7 +256,9 @@ function vlLocalHtml(l, i = 0) {
     <div class="verdict vlverdict ${st.ton || 'info'}" style="margin-top:8px">${vlPhrase(l)}</div>
     ${vlEscalier(l)}
     <div class="grid2 vlgrid" style="margin-top:10px;align-items:start">
-      <div><div class="tiny muted" style="margin-bottom:4px">${an.hypothese ? 'Surfaces retenues (votre hypothèse)' : 'Ce que dit la fiche « Gérer mes biens immobiliers »'}</div><table class="t"><tbody>${Object.keys(ACVL.POND).filter((k) => S[k]).map((k) => `<tr><td>${ACVL.LIB_SURF[k]}</td><td class="r num">${fmtM2(S[k])}</td><td class="r muted small">× ${ACVL.POND[k]}</td></tr>`).join('')}<tr><td><b>Surface pondérée</b></td><td class="r num"><b>${fmtM2(l.sp)}</b></td><td></td></tr></tbody></table>${vlChaine(l)}</div>
+      <div><div class="tiny muted" style="margin-bottom:4px">${an.hypothese ? 'Surfaces retenues (votre hypothèse)' : 'Ce que dit la fiche « Gérer mes biens immobiliers »'}</div><table class="t"><tbody>${Object.keys(ACVL.POND).filter((k) => S[k]).map((k) => `<tr><td>${ACVL.LIB_SURF[k]}</td><td class="r num">${fmtM2(S[k])}</td><td class="r muted small">× ${ACVL.POND[k]}</td></tr>`).join('')}<tr><td><b>Surface pondérée</b></td><td class="r num"><b>${fmtM2(l.sp)}</b></td><td></td></tr></tbody></table>
+        ${l.cadastre ? `<div class="tiny muted" style="margin:10px 0 4px">Ce que dit le cadastre (IGN)</div><div class="vlcad small"><span><b>${fmtM2(l.contenance)}</b> de parcelle</span><span><b>${fmtM2(l.emprise)}</b> de bâti au sol${l.cadastre.nb > 1 ? ` (${l.cadastre.nb} bâtiments)` : ''}</span><span><b>${l.niveaux || '?'}</b> niveau${l.niveaux > 1 ? 'x' : ''} ${l.niveauxSource === 'saisie' ? '(saisi)' : '(estimation IGN)'}</span>${l.cadastre.plancher ? `<span>≈ <b>${fmtM2(l.cadastre.plancher)}</b> de plancher possible</span>` : ''}</div>` : (l.cadastreErreur ? `<div class="tiny muted" style="margin-top:8px">Cadastre : ${esc(l.cadastreErreur)}</div>` : (A.S.cadastre === false ? '' : `<div class="tiny muted" style="margin-top:8px">Cadastre : lecture en attente</div>`))}
+        ${vlChaine(l)}</div>
       <div>${questions.length ? `<div class="tiny muted" style="margin-bottom:4px">Questions à poser au client</div><div class="vlq">${questions.map((q) => `<label class="vlq-item"><input type="checkbox" data-coche="${esc(q.code)}" ${coches[q.code] ? 'checked' : ''}><span>${esc(q.q)}${q.sim ? ` <button class="btn ghost sm vlq-sim" data-simuler="${esc(q.code)}" title="Tester cette hypothèse dans le simulateur">Simuler${q.gain > 0 ? ` · ${fmtK(q.gain)} €/an` : ''}</button>` : ''}</span></label>`).join('')}</div>` : ''}
         ${signaux.length ? `<div class="tiny muted" style="margin:10px 0 4px">Pourquoi</div>${signaux.map((s) => `<div class="sig ${s.gravite >= 3 ? 'bad' : s.gravite === 2 ? 'warn' : ''}"><b>${esc(s.titre)}</b>${s.simulation && s.simulation.gain !== null ? ` — <span class="num ${s.simulation.gain > 0 ? 'ok' : 'muted'}">${s.simulation.gain > 0 ? 'enjeu ' + fmtK(s.simulation.gain) + ' € par an' : 'hypothèse défavorable (' + fmtK(-s.simulation.gain) + ' € de plus)'}</span>` : ''}<div class="small muted">${esc(s.texte)}</div></div>`).join('')}` : ''}
         <div class="vlactions">${act.do ? `<button class="btn primary sm" data-act="${act.do}" data-inv="${id}">${IC[act.ico] || ''} ${act.lib}</button>` : ''}${act.do !== 'question' && st.k !== 'OK' && st.k !== 'FAVORABLE' && calc ? `<button class="btn sm" data-act="question" data-inv="${id}">${IC.mail} Question au client</button>` : ''}${act.do !== 'releve' && ref ? `<button class="btn sm" data-act="releve" data-inv="${id}">${IC.doc} Relevé de propriété</button>` : ''}${act.do !== 'reclam' && st.k === 'PISTE' ? `<button class="btn sm" data-act="reclam" data-inv="${id}">${IC.edit} Brouillon de réclamation</button>` : ''}<button class="btn ghost sm" data-simexcl="${id}">${l.exclu ? 'Réintégrer ce local' : 'Écarter ce local'}</button></div>
@@ -261,6 +271,7 @@ function vlLocalHtml(l, i = 0) {
           <div class="grid2" style="margin-top:6px;gap:6px">${Object.keys(ACVL.POND).map((k) => `<label class="tiny muted">${ACVL.LIB_SURF[k]} <span class="muted">(× ${ACVL.POND[k]})</span><input type="number" min="0" step="1" data-sim="${k}" value="${S[k] || 0}" style="width:100%"></label>`).join('')}</div></div>
         <div><label class="tiny muted">Occupant (nom)<input data-sim="occNom" value="${esc(occ.nom || '')}" placeholder="Enseigne ou société" style="width:100%"></label>
           <label class="tiny muted" style="display:block;margin-top:6px">Code NAF de l’occupant <span class="muted">(sert à détecter un atelier classé en magasin, etc.)</span><input data-sim="occNaf" value="${esc(occ.naf || '')}" placeholder="ex. 45.20A" style="width:100%"></label>
+          <label class="tiny muted" style="display:block;margin-top:6px">Nombre de niveaux du local <span class="muted">(rez-de-chaussée compris ; remplace l’estimation IGN)</span><input type="number" min="1" max="30" data-sim="niveaux" value="${vlSaisie(l.siren, l.invariant).niveaux || ''}" placeholder="${l.cadastre && l.cadastre.niveaux ? l.cadastre.niveaux + ' selon l’IGN' : ''}" style="width:100%"></label>
           <label class="tiny muted" style="display:block;margin-top:6px">Classement hôtelier (étoiles, 0 = non classé)<input type="number" min="0" max="5" data-sim="etoiles" value="${l.etoiles ?? ''}" style="width:100%"></label>
           <label class="tiny muted" style="display:block;margin-top:6px">Note<input data-sim="note" value="${esc(l.note || '')}" placeholder="Réponse du client, pièce reçue…" style="width:100%"></label>
           <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn sm primary" data-simok="${id}">Enregistrer et recalculer</button><button class="btn sm" data-simreset="${id}">Revenir à la fiche déclarée</button></div>
@@ -274,7 +285,8 @@ function bindVl(siren) {
     const root = b.closest('.vlocal'), inv = b.dataset.simok, g = (k) => root.querySelector(`[data-sim="${k}"]`);
     const surfaces = {}; for (const k of Object.keys(ACVL.POND)) { const v = Number(g(k).value) || 0; if (v) surfaces[k] = v; }
     const occNom = g('occNom').value.trim(), occNaf = g('occNaf').value.trim().toUpperCase().replace(/^(\d{2})(\d{2}[A-Z])$/, '$1.$2'), et = g('etoiles').value;
-    await vlSave(siren, inv, { categorie: g('categorie').value, surfaces, occupant: occNom || occNaf ? { nom: occNom, naf: occNaf } : null, etoiles: et === '' ? null : Number(et), note: g('note').value.trim() });
+    const niv = g('niveaux').value;
+    await vlSave(siren, inv, { categorie: g('categorie').value, surfaces, occupant: occNom || occNaf ? { nom: occNom, naf: occNaf } : null, etoiles: et === '' ? null : Number(et), niveaux: niv === '' ? null : Number(niv), note: g('note').value.trim() });
     await vlCompute(); page(); toast('Hypothèse enregistrée : statut recalculé');
   });
   $$('[data-simreset]').forEach((b) => b.onclick = async () => { await vlSave(siren, b.dataset.simreset, { categorie: null, surfaces: null }); await vlCompute(); page(); toast('Fiche déclarée rétablie'); });

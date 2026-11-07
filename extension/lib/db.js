@@ -1,8 +1,8 @@
 // Relève — stockage local (IndexedDB de l'extension). Rien ne quitte le poste.
 'use strict';
 const ACDB = (() => {
-  const NAME = 'avis-collector', VERSION = 2; // 2 : magasin « biens » (6.0). La montée de version ne fait qu'ajouter les magasins manquants : rien n'est effacé.
-  const STORES = { avis: 'id', pdfs: 'id', dossiers: 'siren', dettes: 'siren', tasks: 'id', meta: 'key', runs: 'at', biens: 'siren' };
+  const NAME = 'avis-collector', VERSION = 3; // 2 : magasin « biens », 3 : magasin « cadastre » (6.0). La montée de version ne fait qu'ajouter les magasins manquants : rien n'est effacé.
+  const STORES = { avis: 'id', pdfs: 'id', dossiers: 'siren', dettes: 'siren', tasks: 'id', meta: 'key', runs: 'at', biens: 'siren', cadastre: 'cle' };
   let dbp = null;
   const open = () => dbp || (dbp = new Promise((res, rej) => {
     const r = indexedDB.open(NAME, VERSION);
@@ -27,8 +27,8 @@ const ACDB = (() => {
     },
     async saveSettings(patch) { const s = await api.settings(); const n = { ...s, ...patch, key: 'settings' }; await api.put('meta', n); return n; },
     async loadAll() {
-      const [avis, dossiers, dettes, tasks, settings, runs, ca, cnotes, biens, vl] = await Promise.all([api.all('avis'), api.all('dossiers'), api.all('dettes'), api.all('tasks'), api.settings(), api.all('runs'), api.get('meta', 'ca'), api.get('meta', 'cnotes'), api.all('biens'), api.get('meta', 'vl')]);
-      return { avis, dossiers, dettes, tasks: Object.fromEntries(tasks.map((t) => [t.id, t])), settings, runs: runs.sort((a, b) => b.at - a.at), ca: (ca && ca.data) || {}, cnotes: (cnotes && cnotes.data) || {}, biens, vl: (vl && vl.data) || {} };
+      const [avis, dossiers, dettes, tasks, settings, runs, ca, cnotes, biens, vl, cadastre] = await Promise.all([api.all('avis'), api.all('dossiers'), api.all('dettes'), api.all('tasks'), api.settings(), api.all('runs'), api.get('meta', 'ca'), api.get('meta', 'cnotes'), api.all('biens'), api.get('meta', 'vl'), api.all('cadastre')]);
+      return { avis, dossiers, dettes, tasks: Object.fromEntries(tasks.map((t) => [t.id, t])), settings, runs: runs.sort((a, b) => b.at - a.at), ca: (ca && ca.data) || {}, cnotes: (cnotes && cnotes.data) || {}, biens, vl: (vl && vl.data) || {}, cadastre: Object.fromEntries(cadastre.map((c) => [c.cle, c])) };
     },
     async pdfBlob(id, suite) { const p = await api.get('pdfs', id); if (!p) return null; return suite ? p.suite || null : p.blob || null; },
   };
