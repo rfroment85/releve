@@ -245,3 +245,14 @@ body:has(.selbar) .toast { bottom: 84px; }
 
 .nav .auteur a, .nav .auteur a.on { display: inline; padding: 0; border: 0; box-shadow: none; background: none; border-radius: 0; font-weight: 500; color: var(--ink2); }
 .nav .auteur a:hover { color: var(--accent-d); }
+
+/* Valeur locative (6.0) */
+.kpis .kpi { display: flex; flex-direction: column; gap: 2px; } .kpis .kpi b { font-size: 24px; }
+.verdict.bad { background: var(--bad-bg); color: var(--bad); }
+.vlocal { border-top: 1px solid var(--line2); padding-top: 4px; }
+.vlocal .hd { align-items: flex-start; } .vlocal .hd > div:last-child { margin-left: auto; }
+.vlchain td { padding: 4px 8px; } .vlchain tr:last-child td { border-bottom: 0; }
+.sig { padding: 8px 10px; border-left: 3px solid var(--line); margin: 6px 0; background: #FAFAF7; border-radius: 0 8px 8px 0; }
+.sig.bad { border-left-color: var(--bad); } .sig.warn { border-left-color: var(--warn); }
+.sig .ok { color: var(--ok); font-weight: 600; }
+.vlsim summary { cursor: pointer; color: var(--accent-d); } .vlsim input, .vlsim select { border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; margin-top: 2px; }

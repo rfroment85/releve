@@ -36,6 +36,7 @@ function aLire(part, k, now) {
   const at = k[part + 'At'] || 0, age = now - at;
   if (part === 'amr') return age > (k.amrIndispo ? 30 * 24 * H : 7 * 24 * H);
   if (part === 'dettes') return age > 20 * H;
+  if (part === 'gmbi') return age > 30 * 24 * H; // biens immobiliers : les surfaces et catégories bougent rarement
   if (age < 20 * H) return false; // déjà lu aujourd'hui (reprise après une pause)
   const vide = !((k.annees || {})[part.toUpperCase()] || []).length;
   if (vide && !enFenetre(part.toUpperCase()) && age < 30 * 24 * H) return false;
@@ -48,7 +49,7 @@ const autreDossier = (inf) => { const c = (inf && inf.controle) || ''; return /S
 async function collect(opts) {
   AC.running = true; AC.stop = false; AC.done = 0; AC.total = 0; AC.current = '';
   const t0 = Date.now(), now = Date.now();
-  const stats = { dossiers: 0, avis: 0, nouveaux: 0, pdf: 0, erreurs: 0, dettes: 0, amr: 0, pagesEvitees: 0, requetes: 0 };
+  const stats = { dossiers: 0, avis: 0, nouveaux: 0, pdf: 0, erreurs: 0, dettes: 0, amr: 0, biens: 0, locaux: 0, pagesEvitees: 0, requetes: 0 };
   const annee = String(opts.annee), anneeN1 = String(opts.annee - 1);
   const taxes = (opts.taxes || ['TF', 'CFE']).map((k) => TAXES[k]).filter(Boolean);
   const pause = Math.max(0, opts.delay ?? 60);
@@ -142,9 +143,10 @@ async function collect(opts) {
       const lireT = taxes.filter((t) => aLire(t.key.toLowerCase(), k, now));
       const lireD = opts.dettes !== false && aLire('dettes', k, now);
       const lireA = opts.amr !== false && aLire('amr', k, now);
-      stats.pagesEvitees += (taxes.length - lireT.length) + (opts.dettes !== false && !lireD ? 1 : 0) + (opts.amr !== false && !lireA ? 1 : 0);
+      const lireB = opts.biens !== false && aLire('gmbi', k, now);
+      stats.pagesEvitees += (taxes.length - lireT.length) + (opts.dettes !== false && !lireD ? 1 : 0) + (opts.amr !== false && !lireA ? 1 : 0) + (opts.biens !== false && !lireB ? 1 : 0);
       const out = { annees: { ...((kd[d.siren] || {}).annees || {}) } };
-      if (lireT.length || lireD || lireA) {
+      if (lireT.length || lireD || lireA || lireB) {
         const ok = d.mono ? true : await avecReprise('sélection du dossier', d, () => selectDossier(token, d.siren));
         if (ok === null) { /* dossier non sélectionnable : on passe au suivant */ }
         else {
@@ -157,6 +159,14 @@ async function collect(opts) {
           await Promise.all(parts);
           if (lireA && !AC.stop) await avecReprise('documents à payer', d, async () => { const a = await getAmr(token, d.siren); token = a.token; am = a; out.amrAt = Date.now(); out.amrIndispo = a.indispo || ''; stats.amr += a.rows.length; });
           if (dt || am) await send({ type: 'ac:dettes', siren: d.siren, nom: d.nom, rows: dt ? dt.rows : null, total: dt ? numVal(dt.total) : null, amr: am ? am.rows : null, amrIndispo: am ? (am.indispo || '') : undefined });
+          // Biens immobiliers (« Gérer mes biens immobiliers ») : liste des biens et fiche de chaque local professionnel, pour le contrôle de la valeur locative
+          if (lireB && !AC.stop) await avecReprise('biens immobiliers', d, async () => {
+            const g = await getBiens(token, (i, n) => { if (n > 3) send({ type: 'ac:progress', phase: 'dossiers', done: AC.done, total: dossiers.length, label: `${d.nom} · locaux ${i}/${n}`, eta: null }); }, Math.min(pause, 120));
+            if (g.siren && g.siren !== d.siren) throw new Error('Dossier courant inattendu (' + g.siren + ')');
+            out.gmbiAt = Date.now(); out.gmbiIndispo = g.indispo || '';
+            stats.biens += g.biens.length; stats.locaux += g.biens.filter((b) => b.pro).length;
+            await send({ type: 'ac:biens', siren: d.siren, nom: d.nom, biens: g.biens, attendues: g.attendues, indispo: g.indispo || '' });
+          });
         }
       }
       await send({ type: 'ac:dossier', siren: d.siren, nom: d.nom, ...out, checkedAt: Date.now() });

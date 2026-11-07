@@ -158,7 +158,7 @@ function viewDone(c) {
   return `${statusPills()}
   <div class="card hero">
     <h2>${last.stopped ? 'Mise à jour en pause' : 'Vos clients sont à jour'}</h2>
-    <p>${plural(last.stats ? last.stats.dossiers : 0, 'dossier lu', 'dossiers lus')} en ${dur(last.duree || 0).replace('environ ', '')} · ${plural(last.stats ? last.stats.nouveaux : 0, 'nouvel avis', 'nouveaux avis')}${last.stats && last.stats.erreurs ? ` · ${plural(last.stats.erreurs, 'dossier', 'dossiers')} à relancer` : ''}</p>
+    <p>${plural(last.stats ? last.stats.dossiers : 0, 'dossier lu', 'dossiers lus')} en ${dur(last.duree || 0).replace('environ ', '')} · ${plural(last.stats ? last.stats.nouveaux : 0, 'nouvel avis', 'nouveaux avis')}${last.stats && last.stats.locaux ? ` · ${plural(last.stats.locaux, 'local professionnel lu', 'locaux professionnels lus')}` : ''}${last.stats && last.stats.erreurs ? ` · ${plural(last.stats.erreurs, 'dossier', 'dossiers')} à relancer` : ''}</p>
   </div>
   ${open.length ? `<div class="kpi" style="font-size:20px">${plural(open.length, 'action vous attend', 'actions vous attendent')}</div>
   <div class="cats">${counts.map((k) => `<button class="cat" data-cat="${k.key}"><div class="n num" style="color:${k.couleur}">${k.n}</div><div class="l">${esc(k.titre)}</div></button>`).join('')}</div>` : '<div class="card hero"><h2>Rien à traiter</h2><p>Aucun paiement à vérifier, aucune hausse au-delà de vos seuils.</p></div>'}
@@ -224,7 +224,7 @@ async function start(complet) {
   if (page.running) { toast('Une mise à jour est déjà en cours'); return; }
   const mode = scopeMode();
   const list = V.list && V.list.list && V.list.list.length && Date.now() - V.list.at < 12 * 3600e3 ? V.list.list : null;
-  const opts = { annee: ACA.anneeCampagne(), taxes: ['TF', 'CFE'], delay: V.settings.delai === 120 || !V.settings.delai ? 60 : V.settings.delai, complet: !!complet, dettes: true, amr: V.settings.amr !== false, scope: mode === 'moi' ? scopeSirens() : null, dossiers: list };
+  const opts = { annee: ACA.anneeCampagne(), taxes: ['TF', 'CFE'], delay: V.settings.delai === 120 || !V.settings.delai ? 60 : V.settings.delai, complet: !!complet, dettes: true, amr: V.settings.amr !== false, biens: V.settings.biens !== false, scope: mode === 'moi' ? scopeSirens() : null, dossiers: list };
   await chrome.runtime.sendMessage({ type: 'ac:started' });
   await toTab({ type: 'ac:start', opts });
   V.showDone = true;

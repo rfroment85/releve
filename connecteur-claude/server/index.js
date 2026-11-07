@@ -97,8 +97,8 @@ function appeler(tool, params, delai = 30000) {
 }
 
 // ---- Outils exposés à Claude ----
-const server = new McpServer({ name: 'avis-collector', version: '1.1.2' }, {
-  instructions: 'Relève rassemble les avis de taxe foncière et de CFE des clients d’un cabinet d’expertise comptable, lus dans l’espace professionnel impots.gouv, et propose une liste de travail. Commencez par « resume » pour une vue d’ensemble. Les montants sont en euros. Les outils ne paient rien, n’envoient aucun message et ne modifient rien sur le site des impôts : les messages et réclamations sont des brouillons que l’utilisateur relit et envoie lui-même. Si les noms sont masqués (« Client 4F2A »), utilisez ces pseudonymes tels quels, sans les modifier. Dans ce cas, dès que votre réponse cite des clients, terminez en appelant « afficher_dans_releve » avec votre réponse complète : l’utilisateur la lit dans Relève avec les vrais noms (ils sont remis sur son poste, vous ne les voyez jamais).',
+const server = new McpServer({ name: 'avis-collector', version: '1.2.0' }, {
+  instructions: 'Relève rassemble les avis de taxe foncière et de CFE des clients d’un cabinet d’expertise comptable, lus dans l’espace professionnel impots.gouv, et propose une liste de travail. Commencez par « resume » pour une vue d’ensemble ; « valeur_locative » contrôle le calcul de la taxe foncière des locaux professionnels. Les montants sont en euros. Les outils ne paient rien, n’envoient aucun message et ne modifient rien sur le site des impôts : les messages et réclamations sont des brouillons que l’utilisateur relit et envoie lui-même. Si les noms sont masqués (« Client 4F2A »), utilisez ces pseudonymes tels quels, sans les modifier. Dans ce cas, dès que votre réponse cite des clients, terminez en appelant « afficher_dans_releve » avec votre réponse complète : l’utilisateur la lit dans Relève avec les vrais noms (ils sont remis sur son poste, vous ne les voyez jamais).',
 });
 const texte = (o) => ({ content: [{ type: 'text', text: JSON.stringify(o, null, 2) }] });
 const outil = (name, config, params = (x) => x) => server.registerTool(name, config, async (args) => {
@@ -121,6 +121,11 @@ outil('lister_clients', {
 outil('fiche_client', {
   title: 'Fiche client', description: 'Tout sur un client : avis de l’année et de l’an dernier, explication de la hausse (taux votés, bases, biens nouveaux, détail par collectivité), contrôle de la CFE, dettes fiscales, documents à payer, actions et notes.',
   inputSchema: { client: z.string().describe('Nom (ou partie), SIREN ou pseudonyme') }, annotations: lecture,
+});
+outil('valeur_locative', {
+  title: 'Valeur locative des locaux professionnels', description: 'Contrôle du calcul de la taxe foncière des locaux professionnels (révision 2017) : pour chaque local lu dans « Gérer mes biens immobiliers », surfaces et catégorie déclarées, base recalculée au tarif de la grille départementale, base de l’avis, écart, verdict (anomalie probable, à vérifier, conforme), gain estimé, points à vérifier et questions à poser au client. Sans client : les locaux de tout le portefeuille, anomalies en premier.',
+  inputSchema: { client: z.string().optional().describe('Nom (ou partie), SIREN ou pseudonyme'), verdict: z.enum(['ROUGE', 'ORANGE', 'VERT', 'GRIS', 'EXCLU']).optional().describe('ROUGE = anomalie probable, ORANGE = à vérifier, VERT = conforme, GRIS = sans avis rapproché'), limite: z.number().int().min(1).max(200).optional() },
+  annotations: lecture,
 });
 outil('collectivites', {
   title: 'Évolution par collectivité', description: 'Taxe foncière : effet des taux votés, des bases et des biens nouveaux sur le portefeuille, décisions de taux les plus coûteuses, explication commune par commune.',

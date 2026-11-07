@@ -48,6 +48,7 @@ const ACMCP = (() => {
   };
 
   // ---- Outils ----
+  const vlCache = {}, vlErreurs = {};
   const tools = {
     async resume() {
       const X = await ctx(), c = X.c, open = c.taches.filter((t) => !t.done && !t.snoozed);
@@ -196,6 +197,36 @@ const ACMCP = (() => {
       await self.handleRun({ type: 'ac:started' });
       await ask({ type: 'ac:start', opts: { annee: ACA.anneeCampagne(), taxes: ['TF', 'CFE'], delay: 60, dettes: true, amr: S.amr !== false, scope, complet: !!p.complet, dossiers: list && list.list && Date.now() - list.at < 12 * 3600e3 ? list.list : null } });
       return { lancee: true, perimetre: scope ? `mon portefeuille (${scope.length} dossiers)` : 'tout le cabinet', suivi: 'Utilisez etat_mise_a_jour pour suivre l’avancement.' };
+    },
+    // Valeur locative des locaux professionnels (6.0) : liste des locaux avec verdict, ou détail d'un client
+    async valeur_locative(p = {}) {
+      const X = await ctx();
+      const L = await ACVL.portefeuille({ biens: X.data.biens || [], avis: X.data.avis, saisies: X.data.vl || {}, annee: X.c.annee, correspondance: X.S.correspondance || {}, cache: vlCache, erreurs: vlErreurs });
+      let l = L;
+      if (X.S.scope === 'moi') { const sc = new Set(X.c.N.map((a) => a.siren)); l = l.filter((x) => sc.has(x.siren)); }
+      if (p.client) { const s = new Set(X.resolve(p.client)); l = l.filter((x) => s.has(x.siren)); }
+      if (p.verdict) { const v = String(p.verdict).toUpperCase(); l = l.filter((x) => x.analyse.verdict && x.analyse.verdict.code === v); }
+      const lim = Math.min(p.limite || (p.client ? 50 : 30), 200);
+      const localOut = (x) => { const a = x.analyse, c = a.calcul; return {
+        client: X.nomOf(x.siren, x.nom), siren: X.sirenOf(x.siren), adresse: x.adresse, commune: x.ville, parcelle: `${x.section || ''} ${x.parcelle || ''}`.trim(), numero_local: x.invariant, droit: x.droit || undefined,
+        categorie: x.categorie, libelle: x.categorieLibelle, surfaces_m2: x.surfaces, surface_ponderee: Math.round(x.sp * 10) / 10,
+        calcul: c ? { annee: c.annee, secteur: c.secteur, coefficient_localisation: c.coefLoc, tarif_eur_m2: c.detail[0] && c.detail[0].tarif, vl_brute: Math.round(c.brute), coefficient_neutralisation: c.coefNeut, vl_neutralisee: Math.round(c.neutralisee), vl_1970_reconstituee: c.vl70 ? Math.round(c.vl70) : null, base_calculee: Math.round(c.base) } : undefined,
+        avis: a.ref ? { annee: a.ref.annee, base: a.ref.base, cotisation_commune: a.ref.cotisation, cotisation_totale: a.ref.cotisationTotale, adresse_partagee: !!a.ref.partage } : null,
+        ecart_pct: a.ecart !== null && a.ecart !== undefined ? Math.round(a.ecart * 1000) / 10 : null,
+        verdict: a.verdict ? { code: a.verdict.code, libelle: ACVL.VERDICTS[a.verdict.code], texte: a.verdict.texte } : { code: 'ERREUR', texte: a.erreur },
+        gain_estime_par_an: x.gain > 100 ? Math.round(x.gain) : 0,
+        points_a_verifier: (a.signaux || []).map((sg) => ({ titre: sg.titre, explication: sg.texte, question_au_client: sg.question || undefined, hypothese: sg.simulation ? { categorie: sg.simulation.hypothese.categorie, surfaces: sg.simulation.hypothese.surfaces, base: Math.round(sg.simulation.base), taxe_estimee: sg.simulation.cotisation !== null ? Math.round(sg.simulation.cotisation) : null, gain_par_an: sg.simulation.gain !== null ? Math.round(sg.simulation.gain) : null } : undefined })),
+        occupant: x.occupant || undefined, etoiles: x.etoiles ?? undefined, declaration_attendue: x.demarcheAttendue || undefined, note: x.note || undefined, erreur: a.erreur || undefined,
+      }; };
+      const sans = (X.data.biens || []).filter((r) => r.indispo);
+      return {
+        methode: 'Surface pondérée × tarif de la catégorie dans le secteur de la section cadastrale × coefficient de localisation = valeur locative brute ; × coefficient de neutralisation de la commune ; planchonnement (moyenne avec l’ancienne valeur locative reconstituée depuis la ligne de lissage de l’avis) pour les locaux existant au 1er janvier 2017 ; base = valeur locative ÷ 2. Paramètres : impots.gouv.fr (révision des valeurs locatives des locaux professionnels). Les verdicts sont des indices à confirmer avec le client et les pièces ; la décision et la réclamation restent à l’expert-comptable.',
+        total_locaux: l.length, affiches: Math.min(l.length, lim),
+        repartition: Object.fromEntries(Object.keys(ACVL.VERDICTS).map((k) => [ACVL.VERDICTS[k], l.filter((x) => x.analyse.verdict && x.analyse.verdict.code === k).length]).filter(([, n]) => n)),
+        gain_estime_total_par_an: Math.round(l.filter((x) => x.analyse.verdict && x.analyse.verdict.code === 'ROUGE').reduce((s, x) => s + x.gain, 0)),
+        dossiers_sans_acces_aux_biens: sans.length ? sans.slice(0, 40).map((r) => X.nomOf(r.siren, r.nom)) : undefined,
+        locaux: l.slice(0, lim).map(localOut),
+      };
     },
     async etat_mise_a_jour() {
       const r = self.getRun ? self.getRun() : {};

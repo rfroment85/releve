@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "avis-collector",
   "display_name": "Relève",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Interrogez vos avis de taxe foncière et de CFE (Relève) directement depuis Claude.",
   "long_description": "Connecteur local entre Claude et l'extension Relève pour Chrome ou Edge. Claude peut consulter la liste de travail, la fiche d'un client, l'explication des hausses et l'évolution par collectivité, préparer des brouillons de messages et de réclamations, marquer des actions comme faites et lancer une mise à jour. Les données restent dans l'extension sur ce poste ; seules les informations demandées par Claude lui sont transmises, si la connexion est activée dans les réglages d'Relève (option de masquage des noms). Aucun paiement, aucun envoi de message, aucune modification sur le site des impôts.",
   "author": {
@@ -77,6 +77,10 @@
     {
       "name": "etat_mise_a_jour",
       "description": "Avancement de la mise à jour"
+    },
+    {
+      "name": "valeur_locative",
+      "description": "Contrôle de la valeur locative des locaux professionnels"
     }
   ],
   "keywords": [

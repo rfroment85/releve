@@ -1,6 +1,6 @@
 // Relève — service d'arrière-plan : range sur le poste ce que la collecte transmet, suit l'avancement, met à jour la pastille.
 'use strict';
-importScripts('lib/db.js', 'lib/analyse.js', 'lib/messages.js', 'lib/mcp.js');
+importScripts('lib/db.js', 'lib/analyse.js', 'lib/messages.js', 'lib/avistf.js', 'lib/vl.js', 'lib/mcp.js');
 
 const HOST = 'https://cfspro.impots.gouv.fr/';
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -36,7 +36,7 @@ async function handle(msg, sender) {
       const lus = (await ACDB.all('avis')).filter((a) => { const c = (a.infos && a.infos.controle) || ''; return /SIREN PDF \d+ ≠|référence PDF \S+ ≠|référence .* absente du PDF|PDF non récupéré/.test(c) || (/dénomination .* non trouvée/.test(c) && /montant PDF/.test(c)); });
       const douteux = new Set(lus.map((a) => a.id));
       const ids = (await ACDB.keys('pdfs')).filter((id) => !douteux.has(id));
-      const dossiers = Object.fromEntries((await ACDB.all('dossiers')).map((x) => [x.siren, { annees: x.annees, checkedAt: x.checkedAt, tfAt: x.tfAt, cfeAt: x.cfeAt, dettesAt: x.dettesAt, amrAt: x.amrAt, amrIndispo: x.amrIndispo }]));
+      const dossiers = Object.fromEntries((await ACDB.all('dossiers')).map((x) => [x.siren, { annees: x.annees, checkedAt: x.checkedAt, tfAt: x.tfAt, cfeAt: x.cfeAt, dettesAt: x.dettesAt, amrAt: x.amrAt, amrIndispo: x.amrIndispo, gmbiAt: x.gmbiAt, gmbiIndispo: x.gmbiIndispo }]));
       // … et la page de l'impôt concerné est relue dès la prochaine mise à jour, même rapide
       for (const a of lus) { const k = dossiers[a.siren]; if (k) k[a.taxe === 'TF' ? 'tfAt' : 'cfeAt'] = 0; }
       return { ids, dossiers };
@@ -61,6 +61,11 @@ async function handle(msg, sender) {
       await ACDB.put('dettes', { siren: msg.siren, nom: msg.nom, rows: msg.rows || (old && old.rows) || [], total: msg.total ?? (old && old.total) ?? 0, amr: msg.amr || (msg.amr === null && old ? old.amr : []) || [], amrIndispo: msg.amrIndispo !== undefined ? msg.amrIndispo : (old && old.amrIndispo) || '', at: Date.now() });
     }
       return { ok: true };
+    case 'ac:biens': {
+      // Biens immobiliers du dossier (fiches GMBI) : remplacés en bloc à chaque lecture ; les saisies de l'utilisateur (occupant, hypothèses) sont dans meta/vl, pas ici
+      await ACDB.put('biens', { siren: msg.siren, nom: msg.nom, biens: msg.biens || [], attendues: msg.attendues || [], indispo: msg.indispo || '', at: Date.now() });
+      return { ok: true };
+    }
     case 'ac:dossier': {
       const old = await ACDB.get('dossiers', msg.siren);
       const { type, ...rest } = msg;

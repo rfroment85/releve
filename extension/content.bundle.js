@@ -1,6 +1,136 @@
-// Fichier généré par build.py à partir de lib/core.js et content.js : ne pas modifier.
+// Fichier généré par build.py à partir de lib/pdftext.js, lib/avistf.js, lib/core.js et content.js : ne pas modifier.
 (() => {
 'use strict';
+// Relève — extraction du texte d'un PDF d'avis, sans bibliothèque (flux FlateDecode décompressés nativement, texte des opérateurs Tj/TJ).
+// Partagé entre le script de contenu (collecte) et l'application (relecture des avis déjà sur le poste).
+
+const ACPDF = (() => {
+  async function inflate(u8) {
+    try { const ds = new DecompressionStream('deflate'); const w = ds.writable.getWriter(); w.write(u8); w.close(); return new Uint8Array(await new Response(ds.readable).arrayBuffer()); } catch { return null; }
+  }
+  // Largeurs Helvetica (AFM, millièmes d'em) : servent à détecter les espaces entre lettres positionnées une à une
+  const HW = { ' ': 278, '!': 278, '"': 355, '#': 556, '$': 556, '%': 889, '&': 667, "'": 222, '(': 333, ')': 333, '*': 389, '+': 584, ',': 278, '-': 333, '.': 278, '/': 278, ':': 278, ';': 278, '<': 584, '=': 584, '>': 584, '?': 556, '@': 1015,
+    A: 667, B: 667, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278, J: 500, K: 667, L: 556, M: 833, N: 722, O: 778, P: 667, Q: 778, R: 722, S: 667, T: 611, U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
+    '[': 278, '\\': 278, ']': 278, '^': 469, _: 556, '`': 222, a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222, j: 222, k: 500, l: 222, m: 833, n: 556, o: 556, p: 556, q: 556, r: 333, s: 500, t: 278, u: 556, v: 500, w: 722, x: 500, y: 500, z: 500, '{': 334, '|': 260, '}': 334, '~': 584, '°': 400, '€': 556, '«': 556, '»': 556 };
+  const glyphW = (ch) => { if (/\d/.test(ch)) return 556; const b = ch.normalize('NFD')[0]; return HW[b] ?? 556; };
+  const textW = (t, size) => [...t].reduce((a, c) => a + glyphW(c), 0) * size / 1000;
+  const decPdf = (t) => t.replace(/\\([()\\])/g, '$1').replace(/\\(\d{3})/g, (a, b) => String.fromCharCode(parseInt(b, 8))).replace(/\\[nrt]/g, ' ');
+  // Reconstitue le texte d'un flux de contenu : lettres positionnées une à une (Td) recollées, espace inséré quand l'écart dépasse l'avance du glyphe
+  function layoutText(content) {
+    let size = 10, x = 0, out = '';
+    const re = /\/[\w.-]+\s+(-?[\d.]+)\s+Tf|(-?[\d.]+)\s+(-?[\d.]+)\s+T[dD]|T\*|BT|ET|(?:-?[\d.]+\s+){6}Tm|\[((?:[^\]\\]|\\.)*)\]\s*TJ|\(((?:[^)\\]|\\.)*)\)\s*(?:Tj|'|")/g;
+    let m;
+    while ((m = re.exec(content))) {
+      if (m[1] !== undefined) { size = parseFloat(m[1]) || size; continue; }
+      if (m[2] !== undefined) {
+        const dx = parseFloat(m[2]), dy = parseFloat(m[3]);
+        if (Math.abs(dy) > 0.01) { out += '\n'; } else if (dx - x > 0.15 * size || dx < 0) { out += ' '; }
+        x = 0; continue;
+      }
+      if (m[4] !== undefined) {
+        for (const p of m[4].match(/\(((?:[^)\\]|\\.)*)\)|-?[\d.]+/g) || []) {
+          if (p[0] === '(') { const t = decPdf(p.slice(1, -1)); out += t; x += textW(t, size); }
+          else { const k = parseFloat(p); if (k < -150) out += ' '; x -= k / 1000 * size; }
+        }
+        continue;
+      }
+      if (m[5] !== undefined) { const t = decPdf(m[5]); out += t; x += textW(t, size); continue; }
+      out += '\n'; x = 0; // T*, BT, ET, Tm
+    }
+    return out;
+  }
+  async function pdfText(bytes) {
+    const s = new TextDecoder('latin1').decode(bytes);
+    const parts = []; const re = /(?<!end)stream\r?\n/g; let m;
+    while ((m = re.exec(s))) {
+      const start = m.index + m[0].length; const end = s.indexOf('endstream', start); if (end < 0) break;
+      const head = s.slice(Math.max(0, m.index - 300), m.index);
+      if (/\/Subtype\s*\/Image|FontFile|\/Length1/.test(head)) { re.lastIndex = end + 9; continue; }
+      // Longueur exacte du flux si déclarée ("/Length 1540", pas "/Length1"), sinon on retire la fin de ligne avant "endstream"
+      const lm = head.match(/\/Length\s+(\d+)(?!\d)(?!\s+\d+\s+R)/);
+      let e = end; while (e > start && (s[e - 1] === '\n' || s[e - 1] === '\r')) e--;
+      const candidates = lm ? [start + parseInt(lm[1], 10), e, end] : [e, end];
+      let inf = null;
+      for (const c of candidates) { const u8 = bytes.slice(start, Math.min(c, end)); inf = /FlateDecode/.test(head) ? await inflate(u8) : u8; if (inf) break; }
+      if (inf) { const t = new TextDecoder('windows-1252').decode(inf); if (/\b(Tj|TJ)\b/.test(t)) parts.push(t); }
+      re.lastIndex = end + 9;
+    }
+    return parts.map(layoutText).join('\n').replace(/\u0080/g, '€').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  return { pdfText, layoutText };
+})();
+if (typeof self !== 'undefined') self.ACPDF = ACPDF;
+if (typeof module !== 'undefined') module.exports = ACPDF;
+
+// Relève — lecture du détail par adresse d'un avis de taxe foncière (texte extrait par ACPDF)
+// Sert au contrôle de la valeur locative : base, cotisation et cotisation lissée de la part communale, adresse par adresse.
+// Partagé entre le script de contenu et l'application. Fonctions pures.
+
+const ACTF = (() => {
+  const COLL = ['Commune', 'Syndicat de communes', 'Intercommunalité', 'Taxes spéciales', "Taxe d'ordures ménagères", 'Taxe GEMAPI'];
+  const toks = (s) => s.match(/[+-]?\d+(?:,\d+)?\s*%|\d+|%|-/g) || [];
+  const isInt = (x) => /^\d+$/.test(x || '');
+  // Adresses d'un segment de texte : « 9001 RUE POL FABRE », « 0353A RUE DE BRETAGNE », « 0012 PL LAMARTINE »
+  const adresses = (seg) => (seg.match(/\d{1,4}[A-Z]?\s+[A-Z][A-Z'’ .-]{2,60}?(?=\s+\d{1,4}[A-Z]?\s+[A-Z]|\s*$)/g) || []).map((a) => a.trim());
+  // Numéro de voie normalisé pour rapprocher une adresse d'avis avec une fiche de bien : « 0353A RUE DE BRETAGNE » ↔ « 353 A RUE DE BRETAGNE »
+  const cle = (a) => String(a || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^0+(\d)/, '$1').replace(/^(\d+)\s*([A-Z])\b/, '$1$2').replace(/\b(CHEM|CHE)\b/g, 'CHEMIN').replace(/\b(AV|AVE)\b/g, 'AVENUE').replace(/\bBD\b/g, 'BOULEVARD').replace(/\bPL\b/g, 'PLACE').replace(/\bRTE\b/g, 'ROUTE').replace(/\bIMP\b/g, 'IMPASSE').replace(/\bALL\b/g, 'ALLEE').replace(/[^A-Z0-9]+/g, ' ').trim();
+
+  // En-tête : département et commune d'imposition (« 107 ROQUEBRUNE-SUR-ARGENS 221 11/08/2025 »), montant de l'impôt
+  function enTete(txt) {
+    const m = txt.match(/\b(\d{2,3})\s+([A-Z][A-Z'’ -]{2,40}?)\s+(\d{3})\s+(\d{2}\/\d{2}\/\d{4})/);
+    const dep = (txt.match(/\b(\d{2,3})\s+(?:VAR|[A-Z-]{3,30})\s+\d{3}\s+[A-Z]/) || [])[1] || '';
+    const ref = txt.match(/R[ée]f[ée]rences\s*administratives\s*:\s*(\d{3})\s*(\d{2})\s*(\d{3})\s*(\d{3})\s*(\d{3})/);
+    return { communeCode: m ? m[1] : (ref ? ref[5] : ''), communeNom: m ? m[2].trim() : '', departement: ref ? ref[1].slice(0, 2) : dep.slice(0, 2), montant: Number((txt.match(/Montant\s*de\s*votre\s*imp[ôo]t\s*(\d+)/) || [])[1] || 0) };
+  }
+
+  // Détail par adresse de la page principale : [{ adresse, base, cotisation, cotisationLissee, total }] (part communale ; total = toutes collectivités)
+  function locaux(txt) {
+    const out = [];
+    const h = txt.match(/Taux\s*(\d{4})\s*Taux\s*(\d{4})\s*((?:Adresse\s*Base\s*Cotisation\s*(?:Cotisation\s*lissée\s*)?)+)Cotisation\s*\d{4}\s*Cotisation\s*\d{4}\s*Variation\s*([\s\S]{0,900}?)P\s*r\s*o\s*p\s*r/i);
+    if (!h) return feuillets(txt);
+    const lisse = /lissée/i.test(h[3]), g = lisse ? 3 : 2;
+    const t = toks(h[4]);
+    // 12 colonnes de taux (6 collectivités × N-1 / N) : une collectivité est présente si l'un de ses deux taux est imprimé
+    let i = 0, k = 0;
+    for (let c = 0; c < 6; c++) { let pres = false; for (let j = 0; j < 2; j++) { const x = t[i++]; if (x !== undefined && x !== '%' && /%/.test(x)) pres = true; } if (pres) k++; }
+    if (!k) return feuillets(txt);
+    const ints = []; while (isInt(t[i])) ints.push(+t[i++]);
+    // m adresses × k collectivités × g valeurs, puis le total ; on retient le m dont le total recoupe la somme imprimée
+    const adr = adresses((txt.match(/b\s*â\s*t\s*i\s*e\s*s\s*([\s\S]{0,300}?)D[ÉE]BITEUR/) || [])[1] || '');
+    for (let m = Math.min(4, Math.floor((ints.length - 1) / (k * g))); m >= 1; m--) {
+      const n = m * k * g, total = ints[n];
+      const sum = Array.from({ length: m }, (_, a) => ints[a * k * g + (g - 1)]).reduce((s, x) => s + x, 0); // colonne commune seulement : pas de total imprimé par collectivité
+      let tot = 0; for (let a = 0; a < m; a++) for (let c = 0; c < k; c++) tot += ints[a * k * g + c * g + (g - 1)];
+      if (total === tot || (m === 1 && ints.length >= n + 1)) {
+        for (let a = 0; a < m; a++) { const b = a * k * g; out.push({ adresse: adr[a] || (m === 1 ? adr[0] || '' : ''), base: ints[b], cotisation: ints[b + 1], cotisationLissee: lisse ? ints[b + 2] : null, total: m === 1 ? total : null }); }
+        void sum; break;
+      }
+    }
+    return out.length ? out : feuillets(txt);
+  }
+  // Feuillets annexes (avis multi-adresses, « suite ») : « 0353A RUE DE BRETAGNE 6715 7161 7219 7161 2999 26 571 12 3608 » = bases par collectivité, cotisations, total
+  function feuillets(txt) {
+    const out = [];
+    const seg = (txt.match(/D[ÉE]TAIL\s*DU\s*CALCUL\s*DES\s*COTISATIONS([\s\S]{0,6000}?)(?:Rendez-vous|Vos r[ée]f[ée]rences|$)/i) || [])[1];
+    if (!seg) return out;
+    const re = /(\d{1,4}[A-Z]?\s+[A-Z][A-Z'’ .-]{2,60}?)\s+((?:\d+\s+)+)(?=\d{1,4}[A-Z]?\s+[A-Z]|$)/g;
+    let m;
+    while ((m = re.exec(seg))) {
+      const nums = m[2].trim().split(/\s+/).map(Number);
+      if (nums.length < 3) continue;
+      const k = Math.floor((nums.length - 1) / 2);
+      // bases (k) puis cotisations (k) puis total : la somme des cotisations doit retomber sur le total
+      const cots = nums.slice(k, 2 * k), total = nums[2 * k];
+      if (cots.reduce((s, x) => s + x, 0) !== total) continue;
+      out.push({ adresse: m[1].trim(), base: nums[0], cotisation: cots[0], cotisationLissee: null, total });
+    }
+    return out;
+  }
+  return { locaux, feuillets, enTete, cle, adresses, COLL };
+})();
+if (typeof self !== 'undefined') self.ACTF = ACTF;
+if (typeof module !== 'undefined') module.exports = ACTF;
+
 // Relève — moteur de lecture de l'espace professionnel (script de contenu, s'exécute dans l'onglet impots.gouv)
 // Ne fait que rejouer les requêtes de consultation du site, dans la session ouverte par l'utilisateur. Aucune action sur le site.
 
@@ -228,61 +358,8 @@ async function getAmr(token, siren) {
   throw new Error('jeton de session refusé');
 }
 
-// ======================================================================
-// 2. Lecture du PDF (sans bibliothèque : flux FlateDecode décompressés nativement, texte des opérateurs Tj/TJ)
-// ======================================================================
-async function inflate(u8) {
-  try { const ds = new DecompressionStream('deflate'); const w = ds.writable.getWriter(); w.write(u8); w.close(); return new Uint8Array(await new Response(ds.readable).arrayBuffer()); } catch { return null; }
-}
-// Largeurs Helvetica (AFM, millièmes d'em) : servent à détecter les espaces entre lettres positionnées une à une
-const HW = { ' ': 278, '!': 278, '"': 355, '#': 556, '$': 556, '%': 889, '&': 667, "'": 222, '(': 333, ')': 333, '*': 389, '+': 584, ',': 278, '-': 333, '.': 278, '/': 278, ':': 278, ';': 278, '<': 584, '=': 584, '>': 584, '?': 556, '@': 1015,
-  A: 667, B: 667, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278, J: 500, K: 667, L: 556, M: 833, N: 722, O: 778, P: 667, Q: 778, R: 722, S: 667, T: 611, U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
-  '[': 278, '\\': 278, ']': 278, '^': 469, _: 556, '`': 222, a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222, j: 222, k: 500, l: 222, m: 833, n: 556, o: 556, p: 556, q: 556, r: 333, s: 500, t: 278, u: 556, v: 500, w: 722, x: 500, y: 500, z: 500, '{': 334, '|': 260, '}': 334, '~': 584, '°': 400, '€': 556, '«': 556, '»': 556 };
-const glyphW = (ch) => { if (/\d/.test(ch)) return 556; const b = ch.normalize('NFD')[0]; return HW[b] ?? 556; };
-const textW = (t, size) => [...t].reduce((a, c) => a + glyphW(c), 0) * size / 1000;
-const decPdf = (t) => t.replace(/\\([()\\])/g, '$1').replace(/\\(\d{3})/g, (a, b) => String.fromCharCode(parseInt(b, 8))).replace(/\\[nrt]/g, ' ');
-// Reconstitue le texte d'un flux de contenu : lettres positionnées une à une (Td) recollées, espace inséré quand l'écart dépasse l'avance du glyphe
-function layoutText(content) {
-  let size = 10, x = 0, out = '';
-  const re = /\/[\w.-]+\s+(-?[\d.]+)\s+Tf|(-?[\d.]+)\s+(-?[\d.]+)\s+T[dD]|T\*|BT|ET|(?:-?[\d.]+\s+){6}Tm|\[((?:[^\]\\]|\\.)*)\]\s*TJ|\(((?:[^)\\]|\\.)*)\)\s*(?:Tj|'|")/g;
-  let m;
-  while ((m = re.exec(content))) {
-    if (m[1] !== undefined) { size = parseFloat(m[1]) || size; continue; }
-    if (m[2] !== undefined) {
-      const dx = parseFloat(m[2]), dy = parseFloat(m[3]);
-      if (Math.abs(dy) > 0.01) { out += '\n'; } else if (dx - x > 0.15 * size || dx < 0) { out += ' '; }
-      x = 0; continue;
-    }
-    if (m[4] !== undefined) {
-      for (const p of m[4].match(/\(((?:[^)\\]|\\.)*)\)|-?[\d.]+/g) || []) {
-        if (p[0] === '(') { const t = decPdf(p.slice(1, -1)); out += t; x += textW(t, size); }
-        else { const k = parseFloat(p); if (k < -150) out += ' '; x -= k / 1000 * size; }
-      }
-      continue;
-    }
-    if (m[5] !== undefined) { const t = decPdf(m[5]); out += t; x += textW(t, size); continue; }
-    out += '\n'; x = 0; // T*, BT, ET, Tm
-  }
-  return out;
-}
-async function pdfText(bytes) {
-  const s = new TextDecoder('latin1').decode(bytes);
-  const parts = []; const re = /(?<!end)stream\r?\n/g; let m;
-  while ((m = re.exec(s))) {
-    const start = m.index + m[0].length; const end = s.indexOf('endstream', start); if (end < 0) break;
-    const head = s.slice(Math.max(0, m.index - 300), m.index);
-    if (/\/Subtype\s*\/Image|FontFile|\/Length1/.test(head)) { re.lastIndex = end + 9; continue; }
-    // Longueur exacte du flux si déclarée ("/Length 1540", pas "/Length1"), sinon on retire la fin de ligne avant "endstream"
-    const lm = head.match(/\/Length\s+(\d+)(?!\d)(?!\s+\d+\s+R)/);
-    let e = end; while (e > start && (s[e - 1] === '\n' || s[e - 1] === '\r')) e--;
-    const candidates = lm ? [start + parseInt(lm[1], 10), e, end] : [e, end];
-    let inf = null;
-    for (const c of candidates) { const u8 = bytes.slice(start, Math.min(c, end)); inf = /FlateDecode/.test(head) ? await inflate(u8) : u8; if (inf) break; }
-    if (inf) { const t = new TextDecoder('windows-1252').decode(inf); if (/\b(Tj|TJ)\b/.test(t)) parts.push(t); }
-    re.lastIndex = end + 9;
-  }
-  return parts.map(layoutText).join('\n').replace(/\u0080/g, '€').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
-}
+// Lecture du PDF : lib/pdftext.js (ACPDF), partagée avec l'application
+const pdfText = (bytes) => ACPDF.pdfText(bytes);
 const numVal = (s) => parseFloat(String(s || '').replace(/[\s\u00a0]/g, '').replace(',', '.')) || 0;
 const fmtEur = (n) => (Math.round(n * 100) / 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // Extrait les informations de l'avis de CFE et les confronte à la ligne du tableau du site
@@ -410,7 +487,8 @@ function parseTfDetail(txt) {
     const { taux } = tfTaux(nb[3], 14), rows = tfRows(nb[4], 7, [0]);
     noms.forEach((nom, k) => { const tN1 = taux[2 * k] || '', tN = taux[2 * k + 1] || '', c = rows[k] || {}; if ((tN1 || tN) && c.cotN) lignes.push({ nom: nom + ' (non bâti)', tauxN1: tN1, tauxN: tN, cotN1: c.cotN1 || '', cotN: c.cotN || '', variation: c.var || '' }); });
   }
-  return bati || nb ? { anneeN1, anneeN, lignes } : null;
+  const locaux = ACTF.locaux(txt);
+  return bati || nb || locaux.length ? { anneeN1, anneeN, lignes, locaux, entete: ACTF.enTete(txt) } : null;
 }
 // Explique une variation N-1 → N à partir du détail des avis (taux vs bases)
 function expliquer(taxe, infosN, infosN1, mN, mN1) {
@@ -494,6 +572,73 @@ async function getHabilitations(token, onStep) {
   return { at: Date.now(), abonne, rows, noms };
 }
 
+// ======================================================================
+// Biens immobiliers du dossier sélectionné (« Gérer mes biens immobiliers »)
+// Lecture seule : la liste des biens, puis la fiche « Consulter un bien » de chaque local professionnel. Aucune déclaration n'est ouverte.
+// ======================================================================
+const GMBI_IDTH = 'demarches.gmbi.biensimmo';
+const GMBI_CHAMPS = {
+  'Numéro fiscal du local': 'invariant', 'Nature de local': 'nature', 'N° et rue': 'adresse', 'Département': 'departement', 'Ville': 'ville', 'Numéro de lot dans la copropriété': 'lot', 'Bâtiment': 'batiment',
+  'Entrée (ou escalier)': 'entree', 'Niveau': 'niveau', 'Porte': 'porte', 'Références cadastrales de la parcelle': 'parcelle', 'Catégorie': 'categorieLibelle', 'Nature': 'droit',
+  'Surface des parties principales': 'p1', 'Surface des parties secondaires couvertes': 'p2c', 'Surface des parties secondaires non couvertes': 'p2nc',
+  'Surface des espaces de stationnement couverts (parkings couverts)': 'pk1', 'Surface des espaces de stationnement non couverts (parkings non couverts)': 'pk2',
+};
+const gmbiNum = (v) => { const m = String(v || '').replace(/\s/g, '').match(/([\d.,]+)m/); return m ? parseFloat(m[1].replace(',', '.')) : 0; };
+function gmbiFiche(h) {
+  const doc = parseHTML(h), rec = { surfaces: {} };
+  for (const dl of doc.querySelectorAll('dl.dl-recapitulatif')) {
+    const dts = [...dl.querySelectorAll('dt')], dds = [...dl.querySelectorAll('dd')];
+    dts.forEach((dt, i) => {
+      const lib = (dt.childNodes[0] ? dt.childNodes[0].textContent : dt.textContent).trim().replace(/\s+/g, ' '), val = ((dds[i] && dds[i].textContent) || '').trim().replace(/\s+/g, ' ');
+      const k = GMBI_CHAMPS[lib]; if (!k) return;
+      if (['p1', 'p2c', 'p2nc', 'pk1', 'pk2'].includes(k)) rec.surfaces[k] = gmbiNum(val); else rec[k] = val;
+    });
+  }
+  const m = String(rec.parcelle || '').match(/^(\d{3})\s+([0-9A-Z]{1,2})\s+(\d{1,4})$/);
+  if (m) { rec.prefixe = m[1] === '000' ? '' : m[1]; rec.section = m[2]; rec.numParcelle = String(parseInt(m[3], 10)); }
+  return rec;
+}
+// Liste des biens du dossier courant, puis fiche de chaque local professionnel (environ 0,1 s par fiche). Renvoie { siren, biens, attendues, indispo }.
+async function getBiens(token, onStep, pause = 60) {
+  const r = await safeFetch(`${BASE}/mire/redirection.do?idth=${GMBI_IDTH}&token=${encodeURIComponent(token)}`);
+  if (/erreurCsrf/.test(r.url) || r.status >= 500) throw new Error('CSRF : jeton de session refusé (HTTP ' + r.status + ')');
+  const h = await r.text();
+  if (/Authentification des professionnels/.test(h) && /Mot de passe/.test(h)) throw new Error('Session expirée : reconnectez-vous à l’espace professionnel');
+  const doc = parseHTML(h);
+  const siren = (doc.body.textContent.match(/SIREN\s*:?\s*(\d{9})/) || [])[1] || '';
+  if (!doc.querySelector('#liste-biens')) {
+    const msg = doc.body.textContent.replace(/\s+/g, ' ').match(/(?:n.est pas (?:disponible|habilité|accessible)[^.]{0,120}|aucun (?:service|droit)[^.]{0,120}|(?:habilitation|délégation)[^.]{0,120})/i);
+    return { siren, biens: [], attendues: [], indispo: msg ? msg[0].trim() : 'service « Biens immobiliers » indisponible pour ce dossier (pas de délégation ?)' };
+  }
+  const biens = [], attendues = [], pro = [];
+  for (const c of doc.querySelectorAll('.carte-bien')) {
+    const type = ((c.querySelector('.type-bien') || {}).textContent || '').trim().replace(/\s+/g, ' ');
+    const adresse = ((c.querySelector('.adresse') || {}).textContent || '').trim().replace(/\s+/g, ' ');
+    const ville = ((c.querySelector('.ville') || {}).textContent || '').replace(/\s+/g, ' ').replace(/\u00a0/g, ' ').trim();
+    const bulle = ((c.querySelector('.bulle') || {}).textContent || '').trim();
+    const inv = (c.querySelector('input[name="invariant"]') || {}).value || '';
+    const details = Object.fromEntries([...c.querySelectorAll('li')].map((li) => [li.childNodes[0].textContent.trim().replace(/\s+/g, ' '), ((li.querySelector('span') || {}).textContent || '').trim()]));
+    if (!type && /^(DP|PC|PA|DA|DT)\s?\d/.test(bulle)) { attendues.push({ numero: bulle, adresse, ville }); continue; }
+    const b = { invariant: inv, type, adresse, ville, surface: gmbiNum(bulle), niveau: details['Niveau'] || '', lot: details['Lot de copropriété n°'] || '', pro: /professionnel/i.test(type) };
+    biens.push(b);
+    if (b.pro) pro.push({ b, form: c.querySelector('form') });
+  }
+  let n = 0;
+  for (const { b, form } of pro) {
+    if (!form) continue;
+    onStep?.(++n, pro.length);
+    const action = new URL(form.getAttribute('action').replace(/&amp;/g, '&'), BASE).href;
+    const body = new URLSearchParams(); for (const i of form.querySelectorAll('input')) body.set(i.name, i.value); body.set('_eventId_jeconsulteunbien', '');
+    try {
+      const x = await fetchText(action, { method: 'POST', body: body.toString(), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (!/Consulter un bien/.test(x)) throw new Error('fiche non reconnue');
+      b.fiche = gmbiFiche(x);
+    } catch (e) { b.erreur = e.message; }
+    if (pause) await sleep(pause);
+  }
+  return { siren, biens, attendues, indispo: '' };
+}
+
 // Relève — orchestration de la collecte dans l'onglet impots.gouv (script de contenu)
 // Reçoit les ordres du volet latéral, lit les dossiers, transmet avis, PDF et dettes au service d'arrière-plan qui les range sur le poste.
 
@@ -532,6 +677,7 @@ function aLire(part, k, now) {
   const at = k[part + 'At'] || 0, age = now - at;
   if (part === 'amr') return age > (k.amrIndispo ? 30 * 24 * H : 7 * 24 * H);
   if (part === 'dettes') return age > 20 * H;
+  if (part === 'gmbi') return age > 30 * 24 * H; // biens immobiliers : les surfaces et catégories bougent rarement
   if (age < 20 * H) return false; // déjà lu aujourd'hui (reprise après une pause)
   const vide = !((k.annees || {})[part.toUpperCase()] || []).length;
   if (vide && !enFenetre(part.toUpperCase()) && age < 30 * 24 * H) return false;
@@ -544,7 +690,7 @@ const autreDossier = (inf) => { const c = (inf && inf.controle) || ''; return /S
 async function collect(opts) {
   AC.running = true; AC.stop = false; AC.done = 0; AC.total = 0; AC.current = '';
   const t0 = Date.now(), now = Date.now();
-  const stats = { dossiers: 0, avis: 0, nouveaux: 0, pdf: 0, erreurs: 0, dettes: 0, amr: 0, pagesEvitees: 0, requetes: 0 };
+  const stats = { dossiers: 0, avis: 0, nouveaux: 0, pdf: 0, erreurs: 0, dettes: 0, amr: 0, biens: 0, locaux: 0, pagesEvitees: 0, requetes: 0 };
   const annee = String(opts.annee), anneeN1 = String(opts.annee - 1);
   const taxes = (opts.taxes || ['TF', 'CFE']).map((k) => TAXES[k]).filter(Boolean);
   const pause = Math.max(0, opts.delay ?? 60);
@@ -638,9 +784,10 @@ async function collect(opts) {
       const lireT = taxes.filter((t) => aLire(t.key.toLowerCase(), k, now));
       const lireD = opts.dettes !== false && aLire('dettes', k, now);
       const lireA = opts.amr !== false && aLire('amr', k, now);
-      stats.pagesEvitees += (taxes.length - lireT.length) + (opts.dettes !== false && !lireD ? 1 : 0) + (opts.amr !== false && !lireA ? 1 : 0);
+      const lireB = opts.biens !== false && aLire('gmbi', k, now);
+      stats.pagesEvitees += (taxes.length - lireT.length) + (opts.dettes !== false && !lireD ? 1 : 0) + (opts.amr !== false && !lireA ? 1 : 0) + (opts.biens !== false && !lireB ? 1 : 0);
       const out = { annees: { ...((kd[d.siren] || {}).annees || {}) } };
-      if (lireT.length || lireD || lireA) {
+      if (lireT.length || lireD || lireA || lireB) {
         const ok = d.mono ? true : await avecReprise('sélection du dossier', d, () => selectDossier(token, d.siren));
         if (ok === null) { /* dossier non sélectionnable : on passe au suivant */ }
         else {
@@ -653,6 +800,14 @@ async function collect(opts) {
           await Promise.all(parts);
           if (lireA && !AC.stop) await avecReprise('documents à payer', d, async () => { const a = await getAmr(token, d.siren); token = a.token; am = a; out.amrAt = Date.now(); out.amrIndispo = a.indispo || ''; stats.amr += a.rows.length; });
           if (dt || am) await send({ type: 'ac:dettes', siren: d.siren, nom: d.nom, rows: dt ? dt.rows : null, total: dt ? numVal(dt.total) : null, amr: am ? am.rows : null, amrIndispo: am ? (am.indispo || '') : undefined });
+          // Biens immobiliers (« Gérer mes biens immobiliers ») : liste des biens et fiche de chaque local professionnel, pour le contrôle de la valeur locative
+          if (lireB && !AC.stop) await avecReprise('biens immobiliers', d, async () => {
+            const g = await getBiens(token, (i, n) => { if (n > 3) send({ type: 'ac:progress', phase: 'dossiers', done: AC.done, total: dossiers.length, label: `${d.nom} · locaux ${i}/${n}`, eta: null }); }, Math.min(pause, 120));
+            if (g.siren && g.siren !== d.siren) throw new Error('Dossier courant inattendu (' + g.siren + ')');
+            out.gmbiAt = Date.now(); out.gmbiIndispo = g.indispo || '';
+            stats.biens += g.biens.length; stats.locaux += g.biens.filter((b) => b.pro).length;
+            await send({ type: 'ac:biens', siren: d.siren, nom: d.nom, biens: g.biens, attendues: g.attendues, indispo: g.indispo || '' });
+          });
         }
       }
       await send({ type: 'ac:dossier', siren: d.siren, nom: d.nom, ...out, checkedAt: Date.now() });

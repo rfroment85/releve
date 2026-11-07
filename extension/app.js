@@ -25,7 +25,7 @@ const A = { sel: new Set(), data: null, S: null, c: null, coll: null, q: '', sho
 // ======================================================================
 // Données
 // ======================================================================
-async function load() { A.data = await ACDB.loadAll(); A.S = A.data.settings; compute(); await loadClaude(); const b = await ACDB.get('meta', 'backupAt'); A.backupAt = b && b.at; A.habil = await ACDB.get('meta', 'habil'); const dl = await ACDB.get('meta', 'dossierList'); A.dossierList = (dl && dl.list) || []; const rc = await ACDB.get('meta', 'raccord'); A.raccord = (rc && rc.data) || {}; }
+async function load() { A.data = await ACDB.loadAll(); A.S = A.data.settings; compute(); await vlCompute(); await loadClaude(); const b = await ACDB.get('meta', 'backupAt'); A.backupAt = b && b.at; A.habil = await ACDB.get('meta', 'habil'); const dl = await ACDB.get('meta', 'dossierList'); A.dossierList = (dl && dl.list) || []; const rc = await ACDB.get('meta', 'raccord'); A.raccord = (rc && rc.data) || {}; }
 function scopeSirens() {
   const S = A.S, c = S.correspondance || {};
   const mine = Object.entries(c).filter(([, v]) => S.moi && v.collaborateur === S.moi).map(([k]) => k);
@@ -75,7 +75,7 @@ const { IMPOT_LIB, detteCtx, amrCtx, mailItem, libColl, listeEt, mailDraft, sect
 // Coquille : navigation et barre du haut
 // ======================================================================
 const ROUTES = [
-  { k: 'a-traiter', t: 'À traiter', i: 'list' }, { k: 'demander', t: 'Demander', i: 'chat' }, { k: 'clients', t: 'Clients', i: 'users' }, { k: 'habilitations', t: 'Habilitations', i: 'shield' }, { k: 'collectivites', t: 'Collectivités', i: 'building' },
+  { k: 'a-traiter', t: 'À traiter', i: 'list' }, { k: 'demander', t: 'Demander', i: 'chat' }, { k: 'clients', t: 'Clients', i: 'users' }, { k: 'valeur-locative', t: 'Valeur locative', i: 'ruler' }, { k: 'habilitations', t: 'Habilitations', i: 'shield' }, { k: 'collectivites', t: 'Collectivités', i: 'building' },
   { k: 'calendrier', t: 'Calendrier', i: 'cal' }, { k: 'exports', t: 'Exports', i: 'down' }, { k: 'reglages', t: 'Réglages', i: 'gear' },
 ];
 const route = () => { const h = decodeURIComponent(location.hash.slice(1)) || 'a-traiter'; const [p, ...r] = h.split('/'); return { p, arg: r.join('/') }; };
@@ -118,7 +118,7 @@ function page() {
   const { p, arg } = route();
   const el = $('#page');
   if (!A.data.avis.length && !['reglages', 'bienvenue'].includes(p)) { el.innerHTML = pageVide(); return; }
-  const fn = { 'a-traiter': pageTraiter, clients: pageClients, client: pageClient, collectivites: pageCollectivites, calendrier: pageCalendrier, exports: pageExports, demander: pageDemander, habilitations: pageHabil, reglages: pageReglages, bienvenue: pageBienvenue, synthese: pageSynthese }[p] || pageTraiter;
+  const fn = { 'a-traiter': pageTraiter, clients: pageClients, client: pageClient, collectivites: pageCollectivites, calendrier: pageCalendrier, exports: pageExports, demander: pageDemander, habilitations: pageHabil, 'valeur-locative': pageValeurLocative, reglages: pageReglages, bienvenue: pageBienvenue, synthese: pageSynthese }[p] || pageTraiter;
   el.innerHTML = fn(arg);
   bindPage(p, arg);
 }
@@ -361,6 +361,7 @@ function pageClient(arg) {
     ${decompBlock(a)}${lignesTable(a)}
     <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">${a.hasPdf ? `<button class="btn sm" data-pdf="${esc(a.id)}">${IC.doc} Avis ${a.annee}</button>` : ''}${a.n1 && a.n1.hasPdf ? `<button class="btn sm" data-pdf="${esc(a.n1.id)}">${IC.doc} Avis ${a.n1.annee}</button>` : ''}<button class="btn sm" data-mail="${esc(a.id)}">${IC.mail} Message sur cet avis</button></div></div>`).join('')}
   ${cfeBlock(N)}
+  ${vlClientBlock(siren)}
   ${histHtml}
   ${notesBlock(siren)}
   <div class="card av"><h3>Tous les avis sur ce poste</h3><table class="t"><thead><tr><th>Année</th><th>Impôt</th><th>Commune</th><th>Rôle / type</th><th class="r">Montant</th><th>Paiement</th><th></th></tr></thead><tbody>
@@ -388,6 +389,8 @@ function bindClient(arg) {
   const [siren, sub] = String(arg).split('/');
   bindTraiter();
   if (sub === 'message') setTimeout(() => { const b = $('#mailMain'); if (b) b.click(); }, 50);
+  if (sub === 'vl') setTimeout(() => { const e = $('#vl'); if (e) e.scrollIntoView({ behavior: calme() ? 'auto' : 'smooth', block: 'start' }); }, 50);
+  bindVl(siren);
   const os = $('#onSite'); if (os) os.onclick = () => openOnSite(siren, 'accueil');
   const ci = $('#cnoteIn'), co = $('#cnoteOk');
   if (co) { const add = () => { const v = ci.value.trim(); if (v) saveCnotes(siren, [...(A.data.cnotes[siren] || []), { at: Date.now(), text: v }]).then(() => toast('Note ajoutée')); }; co.onclick = add; ci.onkeydown = (e) => { if (e.key === 'Enter') add(); }; }
@@ -477,6 +480,7 @@ function pageExports() {
     <div class="card exp"><h2>${IC.down} Classeur Excel de la campagne</h2><p>Une feuille par usage : À traiter, avis ${A.c.annee} avec l’analyse des hausses, collectivités, dettes fiscales. Filtres et volets figés prêts à l’emploi.</p><button class="btn primary" data-exp="xlsx">Télécharger le classeur</button></div>
     <div class="card exp"><h2>${IC.doc} Avis PDF (.zip)</h2><p>${plural(N.filter((a) => a.hasPdf).length, 'avis', 'avis')} ${A.c.annee} et ${plural(n1.filter((a) => a.hasPdf).length, 'avis', 'avis')} ${A.c.anneeN1}, rangés dans un dossier par client.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-exp="zip">Avis ${A.c.annee}</button><button class="btn" data-exp="zip2">Avis ${A.c.annee} et ${A.c.anneeN1}</button></div></div>
     <div class="card exp"><h2>${IC.mail} Brouillons de mails (.zip)</h2><p>Un seul brouillon par client, qui regroupe tous ses points ouverts (paiements, hausses, créances, prélèvement), avis en pièce jointe. Chaque fichier s’ouvre dans Outlook ; rien n’est envoyé sans vous.</p><button class="btn" data-exp="mails">Préparer ${plural(new Set(openTasks().filter((t) => mailItem(t)).map((t) => t.siren)).size, 'brouillon')}</button></div>
+    <div class="card exp"><h2>${IC.ruler} Valeur locative des locaux professionnels</h2><p>Un local par ligne : surfaces déclarées, secteur et tarif, base recalculée, base de l’avis, verdict, gain estimé, points à vérifier et questions au client.</p><button class="btn" data-exp="vlxlsx">Télécharger le classeur des locaux</button></div>
     <div class="card exp"><h2>${IC.print} Synthèse pour l’associé</h2><p>Une page : chiffres clés, actions par catégorie, plus fortes hausses, décisions des collectivités. À imprimer ou enregistrer en PDF.</p><a class="btn" href="#synthese">Ouvrir la synthèse</a></div>
   </div>`;
 }
@@ -486,6 +490,7 @@ async function doExport(kind, btn) {
   try {
     const stamp = jourISO(), port = scopeMoi() ? (A.S.moi ? clean(A.S.moi) : 'portefeuille') : 'cabinet';
     if (kind === 'xlsx') { download(buildXlsxCampagne(), `Releve_${A.c.annee}_${port}_${stamp}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('Classeur téléchargé'); }
+    else if (kind === 'vlxlsx') { download(buildXlsxVl(), `Releve_valeur_locative_${A.c.annee}_${port}_${stamp}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('Classeur des locaux téléchargé'); }
     else if (kind === 'zip' || kind === 'zip2') {
       const list = A.c.avis.filter((a) => a.hasPdf && (a.annee === A.c.annee || (kind === 'zip2' && a.annee === A.c.anneeN1)));
       const entries = [];
@@ -622,7 +627,8 @@ function pageReglages() {
     <div class="card"><label class="f">Créances</label>
       <div class="help">Les soldes inférieurs à ce montant (reliquats de quelques centimes) restent visibles dans la fiche client mais n’entrent pas dans la liste de travail.</div>
       <div class="inl"><span>Ignorer les soldes inférieurs à</span><input type="number" id="sDette" min="0" step="1" value="${S.seuilDette ?? 5}"><span>€</span><button class="btn sm" id="saveDette">Enregistrer</button></div>
-      <label class="inl" style="margin-top:10px;font-weight:400"><input type="checkbox" id="amrOn" ${S.amr !== false ? 'checked' : ''}> Lire aussi les documents à payer de « Payer › Dette fiscale » (avis de mise en recouvrement : pénalités, rappels). Lecture seule, aucun paiement.</label></div>
+      <label class="inl" style="margin-top:10px;font-weight:400"><input type="checkbox" id="amrOn" ${S.amr !== false ? 'checked' : ''}> Lire aussi les documents à payer de « Payer › Dette fiscale » (avis de mise en recouvrement : pénalités, rappels). Lecture seule, aucun paiement.</label>
+      <label class="inl" style="margin-top:6px;font-weight:400"><input type="checkbox" id="biensOn" ${S.biens !== false ? 'checked' : ''}> Lire aussi les biens immobiliers de « Gérer mes biens immobiliers » (surfaces, catégorie, parcelle de chaque local professionnel), pour le contrôle de la valeur locative. Lecture seule, aucune déclaration.</label></div>
     <div class="card" id="mcpCard"><label class="f">Connexion à Claude (facultative)</label>
       <div class="help">Permet de poser des questions à Claude sur vos avis (« quels clients doivent payer avant le 15/12 ? », « prépare le message pour… ») depuis l’application Claude, grâce au connecteur Relève à installer dans Claude (<a href="https://releveavis.netlify.app/mode-emploi.html#claude" target="_blank">mode d’emploi</a>). Avec les noms masqués, Claude envoie ses réponses dans « Demander › Réponses de Claude », où les vrais noms sont remis sur ce poste.</div>
       <div class="warnbox" style="background:var(--warn-bg);color:#6B4500;padding:10px 12px;border-radius:9px;font-size:13px;margin:6px 0 10px">Quand cette connexion est active, les informations demandées par Claude (noms, montants, situation fiscale des clients) lui sont transmises pour produire ses réponses : elles quittent alors le poste. À n’activer qu’avec un compte Claude du cabinet et dans le respect de votre charte IA et du secret professionnel.</div>
@@ -695,6 +701,7 @@ function bindReglages() {
   $('#bannerOn').onchange = (ev) => save({ banner: ev.target.checked });
   $('#saveDette').onclick = () => save({ seuilDette: Math.max(0, +$('#sDette').value || 0) });
   $('#amrOn').onchange = (ev) => save({ amr: ev.target.checked }, ev.target.checked ? 'Documents à payer : lus à la prochaine mise à jour' : 'Documents à payer : non lus');
+  $('#biensOn').onchange = (ev) => save({ biens: ev.target.checked }, ev.target.checked ? 'Biens immobiliers : lus à la prochaine mise à jour' : 'Biens immobiliers : non lus');
   $('#saveSig').onclick = () => save({ signature: $('#sig').value.trim() });
   $('#saveDelai').onclick = () => save({ delai: Math.min(2000, Math.max(80, +$('#delai').value || 120)) });
   $('#bkSave').onclick = sauvegarder;
@@ -1136,6 +1143,7 @@ function bindPage(p, arg) {
   if (p === 'reglages') bindReglages();
   if (p === 'demander') bindDemander(arg);
   if (p === 'habilitations') bindHabil(arg);
+  if (p === 'valeur-locative') bindValeurLocative();
   if (p === 'synthese') { const b = $('#printBtn'); if (b) b.onclick = () => window.print(); }
   $$('[data-exp]').forEach((b) => b.onclick = () => doExport(b.dataset.exp, b));
 }
