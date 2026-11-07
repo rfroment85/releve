@@ -40,14 +40,36 @@ async function getToken() {
 }
 
 // Liste de tous les dossiers rattachés au service Avis CFE (pagination 10 par page)
-async function listDossiers(token, onProgress, idth = 'consulter.avis.cfe') {
+const extractDossiers = (h) => [...parseHTML(h).querySelectorAll('a[href*="dossierSelect.do"]')]
+  .map((a) => ({ siren: (a.getAttribute('href').match(/idDossier=(\w+)/) || [])[1], nom: a.textContent.trim() }))
+  .filter((d) => d.siren);
+// Première page de la liste : sert aussi à vérifier qu'une liste gardée en mémoire correspond bien à l'espace connecté
+async function premierePageDossiers(token, idth = 'consulter.avis.cfe') {
   const first = await fetchText(`${BASE}/mire/afficherSelectionDossier.do?idth=${encodeURIComponent(idth)}&p=1&token=${token}`);
   const mPages = first.replace(/&nbsp;|\u00a0/g, ' ').match(/Page\s+1\s+sur\s+(\d+)/);
-  const nPages = mPages ? parseInt(mPages[1], 10) : 1;
-  const nTotal = parseInt((first.match(/(\d+)<\/span>\s*(?:&nbsp;|\s)*résultat/) || [])[1] || '0', 10);
-  const extract = (h) => [...parseHTML(h).querySelectorAll('a[href*="dossierSelect.do"]')]
-    .map((a) => ({ siren: (a.getAttribute('href').match(/idDossier=(\w+)/) || [])[1], nom: a.textContent.trim() }))
-    .filter((d) => d.siren);
+  return { first, nPages: mPages ? parseInt(mPages[1], 10) : 1, nTotal: parseInt((first.match(/(\d+)<\/span>\s*(?:&nbsp;|\s)*résultat/) || [])[1] || '0', 10), dossiers: extractDossiers(first) };
+}
+// Liste gardée en mémoire encore valable ? (même espace : mêmes dossiers en tête de liste, même nombre annoncé)
+async function listeToujoursValable(token, liste) {
+  const pp = await premierePageDossiers(token);
+  if (!pp.dossiers.length) return false;
+  const connus = new Set(liste.map((d) => d.siren));
+  if (pp.dossiers.some((d) => !connus.has(d.siren))) return false;
+  return !pp.nTotal || pp.nTotal === liste.length;
+}
+// Espace sans liste de dossiers (espace professionnel d'une entreprise ouvert avec ses propres codes) : le dossier est celui affiché
+async function dossierDeLEspace() {
+  const doc = parseHTML(await fetchText(AVIS_URL));
+  const txt = doc.body ? doc.body.textContent.replace(/\s+/g, ' ') : '';
+  const siren = (txt.match(/SIREN ou IDSP\s*:?\s*(\d{9})/) || [])[1];
+  if (!siren) return null;
+  const nom = ((txt.match(/(?:Dénomination|Raison sociale)\s*:?\s*(.{3,80}?)\s*(?:SIREN|Adresse|N°|$)/) || [])[1] || '').trim();
+  return { siren, nom, mono: true };
+}
+
+async function listDossiers(token, onProgress, idth = 'consulter.avis.cfe') {
+  const { first, nPages, nTotal } = await premierePageDossiers(token, idth);
+  const extract = extractDossiers;
   const all = extract(first);
   // Pages lues 4 par 4 (la liste ne dépend pas du dossier sélectionné)
   for (let p = 2; p <= nPages; p += 4) {

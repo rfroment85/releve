@@ -43,14 +43,36 @@ async function getToken() {
 }
 
 // Liste de tous les dossiers rattachés au service Avis CFE (pagination 10 par page)
-async function listDossiers(token, onProgress, idth = 'consulter.avis.cfe') {
+const extractDossiers = (h) => [...parseHTML(h).querySelectorAll('a[href*="dossierSelect.do"]')]
+  .map((a) => ({ siren: (a.getAttribute('href').match(/idDossier=(\w+)/) || [])[1], nom: a.textContent.trim() }))
+  .filter((d) => d.siren);
+// Première page de la liste : sert aussi à vérifier qu'une liste gardée en mémoire correspond bien à l'espace connecté
+async function premierePageDossiers(token, idth = 'consulter.avis.cfe') {
   const first = await fetchText(`${BASE}/mire/afficherSelectionDossier.do?idth=${encodeURIComponent(idth)}&p=1&token=${token}`);
   const mPages = first.replace(/&nbsp;|\u00a0/g, ' ').match(/Page\s+1\s+sur\s+(\d+)/);
-  const nPages = mPages ? parseInt(mPages[1], 10) : 1;
-  const nTotal = parseInt((first.match(/(\d+)<\/span>\s*(?:&nbsp;|\s)*résultat/) || [])[1] || '0', 10);
-  const extract = (h) => [...parseHTML(h).querySelectorAll('a[href*="dossierSelect.do"]')]
-    .map((a) => ({ siren: (a.getAttribute('href').match(/idDossier=(\w+)/) || [])[1], nom: a.textContent.trim() }))
-    .filter((d) => d.siren);
+  return { first, nPages: mPages ? parseInt(mPages[1], 10) : 1, nTotal: parseInt((first.match(/(\d+)<\/span>\s*(?:&nbsp;|\s)*résultat/) || [])[1] || '0', 10), dossiers: extractDossiers(first) };
+}
+// Liste gardée en mémoire encore valable ? (même espace : mêmes dossiers en tête de liste, même nombre annoncé)
+async function listeToujoursValable(token, liste) {
+  const pp = await premierePageDossiers(token);
+  if (!pp.dossiers.length) return false;
+  const connus = new Set(liste.map((d) => d.siren));
+  if (pp.dossiers.some((d) => !connus.has(d.siren))) return false;
+  return !pp.nTotal || pp.nTotal === liste.length;
+}
+// Espace sans liste de dossiers (espace professionnel d'une entreprise ouvert avec ses propres codes) : le dossier est celui affiché
+async function dossierDeLEspace() {
+  const doc = parseHTML(await fetchText(AVIS_URL));
+  const txt = doc.body ? doc.body.textContent.replace(/\s+/g, ' ') : '';
+  const siren = (txt.match(/SIREN ou IDSP\s*:?\s*(\d{9})/) || [])[1];
+  if (!siren) return null;
+  const nom = ((txt.match(/(?:Dénomination|Raison sociale)\s*:?\s*(.{3,80}?)\s*(?:SIREN|Adresse|N°|$)/) || [])[1] || '').trim();
+  return { siren, nom, mono: true };
+}
+
+async function listDossiers(token, onProgress, idth = 'consulter.avis.cfe') {
+  const { first, nPages, nTotal } = await premierePageDossiers(token, idth);
+  const extract = extractDossiers;
   const all = extract(first);
   // Pages lues 4 par 4 (la liste ne dépend pas du dossier sélectionné)
   for (let p = 2; p <= nPages; p += 4) {
@@ -532,8 +554,18 @@ async function collect(opts) {
     const known = new Set(kr.ids || []), kd = kr.dossiers || {};
     let token = await getToken();
     send({ type: 'ac:progress', phase: 'liste', done: 0, total: 0, label: 'Lecture de la liste des dossiers…' });
-    let dossiers = opts.dossiers && opts.dossiers.length ? opts.dossiers : await listDossiers(token, (p, n) => send({ type: 'ac:progress', phase: 'liste', done: p, total: n, label: `Liste des dossiers : page ${p} / ${n}` }));
-    if (!opts.dossiers || !opts.dossiers.length) await send({ type: 'ac:dossierList', list: dossiers });
+    // Liste gardée en mémoire (reprise rapide) : réutilisée seulement si elle correspond à l'espace connecté maintenant
+    // (sinon, après un changement de compte impots.gouv, on lirait les dossiers de l'espace précédent)
+    let dossiers = null;
+    if (opts.dossiers && opts.dossiers.length) { try { if (await listeToujoursValable(token, opts.dossiers)) dossiers = opts.dossiers; } catch (e) { if (/Session expirée/.test(e.message)) throw e; } }
+    if (!dossiers) {
+      try { dossiers = await listDossiers(token, (p, n) => send({ type: 'ac:progress', phase: 'liste', done: p, total: n, label: `Liste des dossiers : page ${p} / ${n}` })); }
+      catch (e) { if (/Session expirée/.test(e.message)) throw e; dossiers = []; }
+      // Espace d'une entreprise (codes du client) : pas de liste, un seul dossier, celui affiché
+      if (!dossiers.length) { const m = await dossierDeLEspace(); if (m) { if (!m.nom) { m.nom = 'Entreprise ' + m.siren; m.nomProvisoire = true; } dossiers = [m]; send({ type: 'ac:log', level: 'info', text: `Espace d'une seule entreprise : SIREN ${m.siren}` }); } }
+      if (!dossiers.length) throw new Error('Aucun dossier trouvé dans cet espace professionnel (service « Avis CFE » sans dossier rattaché ?)');
+      await send({ type: 'ac:dossierList', list: dossiers });
+    }
     if (opts.scope && opts.scope.length) { const sc = new Set(opts.scope); dossiers = dossiers.filter((d) => sc.has(d.siren)); }
     AC.total = dossiers.length;
 
@@ -557,14 +589,14 @@ async function collect(opts) {
           if (r.first !== curFirst) { const p = await ajaxPage(r.first, vs, taxe); vs = p.vs; curFirst = r.first; }
           const b = await downloadPdf(r.linkId, vs, taxe.url);
           let inf;
-          try { inf = parseAvisPdf(taxe, await pdfText(b), d, r); } catch (e) { inf = { controle: 'Lecture impossible : ' + e.message, prelevement: 'À VÉRIFIER' }; }
+          try { inf = parseAvisPdf(taxe, await pdfText(b), d.nomProvisoire ? { ...d, nom: '' } : d, r); } catch (e) { inf = { controle: 'Lecture impossible : ' + e.message, prelevement: 'À VÉRIFIER' }; }
           return { bytes: b, infos: inf };
         };
         let cible = row, { bytes, infos } = await telecharger(row);
         for (let essai = 0; autreDossier(infos) && essai < 2 && !AC.stop; essai++) {
           send({ type: 'ac:log', level: 'warn', text: `${d.nom} : le site a renvoyé l'avis d'un autre dossier, nouvel essai` });
           await sleep(600 * (essai + 1));
-          await selectDossier(token, d.siren);
+          if (!d.mono) await selectDossier(token, d.siren);
           const g = await getAvis(taxe);
           if (g.siren && g.siren !== d.siren) continue;
           vs = g.vs; curFirst = g.curFirst;
@@ -592,7 +624,7 @@ async function collect(opts) {
           if (essai >= 2) { stats.erreurs++; send({ type: 'ac:log', level: 'warn', text: `${d.nom} (${label}) : ${e.message}` }); return null; }
           await sleep(800 * (essai + 1));
           if (/CSRF/.test(e.message)) token = await getToken();
-          try { await selectDossier(token, d.siren); } catch (e2) { if (/Session expirée/.test(e2.message)) throw e2; }
+          if (!d.mono) try { await selectDossier(token, d.siren); } catch (e2) { if (/Session expirée/.test(e2.message)) throw e2; }
         }
       }
     };
@@ -609,7 +641,7 @@ async function collect(opts) {
       stats.pagesEvitees += (taxes.length - lireT.length) + (opts.dettes !== false && !lireD ? 1 : 0) + (opts.amr !== false && !lireA ? 1 : 0);
       const out = { annees: { ...((kd[d.siren] || {}).annees || {}) } };
       if (lireT.length || lireD || lireA) {
-        const ok = await avecReprise('sélection du dossier', d, () => selectDossier(token, d.siren));
+        const ok = d.mono ? true : await avecReprise('sélection du dossier', d, () => selectDossier(token, d.siren));
         if (ok === null) { /* dossier non sélectionnable : on passe au suivant */ }
         else {
           // Les pages du dossier sont lues en parallèle (le dossier reste sélectionné côté serveur)
