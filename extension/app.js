@@ -1151,7 +1151,7 @@ function bindPage(p, arg) {
   if (p === 'reglages') bindReglages();
   if (p === 'demander') bindDemander(arg);
   if (p === 'habilitations') bindHabil(arg);
-  if (p === 'valeur-locative') bindValeurLocative();
+  if (p === 'valeur-locative') bindValeurLocative(arg);
   if (p === 'synthese') { const b = $('#printBtn'); if (b) b.onclick = () => window.print(); }
   $$('[data-exp]').forEach((b) => b.onclick = () => doExport(b.dataset.exp, b));
 }
