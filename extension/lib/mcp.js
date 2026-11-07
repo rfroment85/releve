@@ -201,7 +201,7 @@ const ACMCP = (() => {
     // Valeur locative des locaux professionnels (6.0) : liste des locaux avec verdict, ou détail d'un client
     async valeur_locative(p = {}) {
       const X = await ctx();
-      const L = await ACVL.portefeuille({ biens: X.data.biens || [], avis: X.data.avis, saisies: X.data.vl || {}, annee: X.c.annee, correspondance: X.S.correspondance || {}, cache: vlCache, erreurs: vlErreurs });
+      const L = await ACVL.portefeuille({ biens: X.data.biens || [], avis: X.data.avis, saisies: X.data.vl || {}, annee: X.c.annee, correspondance: X.S.correspondance || {}, cache: vlCache, erreurs: vlErreurs, cadastre: X.data.cadastre || {} });
       let l = L;
       if (X.S.scope === 'moi') { const sc = new Set(X.c.N.map((a) => a.siren)); l = l.filter((x) => sc.has(x.siren)); }
       if (p.client) { const s = new Set(X.resolve(p.client)); l = l.filter((x) => s.has(x.siren)); }
@@ -217,6 +217,8 @@ const ACMCP = (() => {
         verdict: a.verdict ? { code: a.verdict.code, libelle: ACVL.VERDICTS[a.verdict.code], texte: a.verdict.texte } : { code: 'ERREUR', texte: a.erreur },
         gain_estime_par_an: x.gain > 100 ? Math.round(x.gain) : 0,
         points_a_verifier: (a.signaux || []).map((sg) => ({ titre: sg.titre, explication: sg.texte, question_au_client: sg.question || undefined, hypothese: sg.simulation ? { categorie: sg.simulation.hypothese.categorie, surfaces: sg.simulation.hypothese.surfaces, base: Math.round(sg.simulation.base), taxe_estimee: sg.simulation.cotisation !== null ? Math.round(sg.simulation.cotisation) : null, gain_par_an: sg.simulation.gain !== null ? Math.round(sg.simulation.gain) : null } : undefined })),
+        cadastre: x.cadastre ? { parcelle_m2: x.contenance, bati_au_sol_m2: x.emprise, batiments: x.cadastre.nb, niveaux_estimes: x.cadastre.niveaux, plancher_possible_m2: x.cadastre.plancher, source: 'IGN (BD TOPO, parcellaire express)' } : (x.cadastreErreur ? { erreur: x.cadastreErreur } : undefined),
+        a_faire: (() => { const st = ACVL.statut(x); return st.k === 'TROP' ? 'Faire confirmer l’usage et les surfaces par le client, puis préparer la réclamation (délai : 31/12 de l’année suivant l’avis)' : st.k === 'PISTE' ? 'Demander le relevé de propriété au service des impôts fonciers (base de chaque local)' : st.k === 'QUESTION' ? 'Poser la question au client' : st.k === 'FAVORABLE' ? 'Ne rien réclamer (l’avis est inférieur à la grille)' : st.k === 'MANQUE' ? 'Attendre l’avis de taxe foncière' : st.k === 'NONCALC' ? 'Compléter la fiche dans Relève' : 'Rien à faire'; })(),
         occupant: x.occupant || undefined, etoiles: x.etoiles ?? undefined, declaration_attendue: x.demarcheAttendue || undefined, note: x.note || undefined, erreur: a.erreur || undefined,
       }; };
       const sans = (X.data.biens || []).filter((r) => r.indispo);

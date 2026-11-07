@@ -16,6 +16,23 @@ const fmtM2 = (n) => (Number(n) || 0).toLocaleString('fr-FR') + ' m²';
 const fmtK = (n) => Math.round(n || 0).toLocaleString('fr-FR');
 const fmt2 = (n) => Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const catPill = (c, cls = 'pill') => c ? `<span class="${cls}" title="${esc(ACVL.CATEGORIES[c] || '')}">${esc(c)}</span>${ACVL.COURT[c] ? ` <span class="tiny muted">${esc(ACVL.COURT[c])}</span>` : ''}` : '';
+// Liens « voir le local » : Géoportail (IGN, parcelle), Google Maps (adresse), Street View (centre de la parcelle). Simples liens : rien n'est transmis tant qu'on ne clique pas.
+function vlLiens(l) {
+  const adr = `${l.adresse}, ${l.ville.replace(/\s*\(.*\)\s*$/, '')}`, c = l.cadastre && l.cadastre.centre;
+  const liens = [];
+  if (c) liens.push(['Géoportail', `https://www.geoportail.gouv.fr/carte?c=${c[0]},${c[1]}&z=19&l0=ORTHOIMAGERY.ORTHOPHOTOS::GEOPORTAIL:OGC:WMTS(1)&l1=CADASTRALPARCELS.PARCELLAIRE_EXPRESS::GEOPORTAIL:OGC:WMTS(1)&permalink=yes`, 'Photo aérienne et parcelles cadastrales (IGN)']);
+  liens.push(['Google Maps', `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(adr)}`, 'Ouvre l’adresse dans Google Maps (dans un nouvel onglet)']);
+  if (c) liens.push(['Street View', `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${c[1]},${c[0]}`, 'Façade, enseigne, nombre de niveaux : la vue depuis la rue (Google)']);
+  return liens.map(([t, u, title]) => `<a class="btn ghost sm" href="${u}" target="_blank" rel="noopener" title="${esc(title)}">${IC.ext || ''} ${t}</a>`).join('');
+}
+// Photo aérienne de la parcelle (orthophoto IGN) avec le contour de la parcelle et le bâti relevé
+function vlCarte(l) {
+  const c = l.cadastre && ACCAD.carte(l.cadastre, 600, 400); if (!c) return '';
+  return `<figure class="vlmap"><div class="vlmap-box"><img src="${c.url}" width="${c.largeur}" height="${c.hauteur}" alt="Photo aérienne de la parcelle ${esc(l.section || '')} ${esc(l.parcelle || '')}" loading="lazy">
+    <svg viewBox="0 0 ${c.largeur} ${c.hauteur}" preserveAspectRatio="none">${c.batiments.map((b) => `<path d="${b.d}" class="bat"><title>Bâtiment ${b.surface} m² au sol · ${b.niveaux} niveau${b.niveaux > 1 ? 'x' : ''} (estimation IGN)</title></path>`).join('')}${c.parcelle.map((d) => `<path d="${d}" class="parc"/>`).join('')}</svg>
+    <span class="vlmap-scale tiny">${c.echelle} m</span></div>
+    <figcaption class="tiny muted">Photo aérienne IGN · parcelle ${esc(l.section || '')} ${esc(l.parcelle || '')} en jaune (${fmtM2(l.contenance)}), bâti relevé en bleu (${fmtM2(l.emprise)} au sol). Survolez un bâtiment pour ses niveaux.</figcaption></figure>`;
+}
 const vlExpert = () => A.S.vlNiveau === 'expert';
 const vlStatut = (l) => ACVL.statut(l);
 
@@ -122,7 +139,7 @@ const vlLexique = () => `<details class="card" style="margin-top:14px" id="lexiq
       <p><b>Surface pondérée</b> — la surface principale compte pour 1, les surfaces secondaires couvertes (réserves, sanitaires) pour 0,5, les non couvertes pour 0,2, les parkings couverts 0,5 et non couverts 0,2. C’est elle qui est multipliée par le tarif.</p>
     </div>
     <div>
-      <p><b>Cadastre (IGN)</b> — pour chaque parcelle, Relève lit la surface de la parcelle et l’emprise au sol des bâtiments (avec leur nombre de niveaux estimé) sur la Géoplateforme de l’IGN, en ne transmettant que la référence cadastrale. Ça permet de repérer une surface principale supérieure à ce que le bâti peut contenir, ou des surfaces non couvertes plus grandes que la parcelle.</p>
+      <p><b>Cadastre (IGN)</b> — pour chaque parcelle, Relève lit la surface de la parcelle et l’emprise au sol des bâtiments (avec leur nombre de niveaux estimé) sur la Géoplateforme de l’IGN, en ne transmettant que la référence cadastrale. Ça permet de repérer une surface principale supérieure à ce que le bâti peut contenir, ou des surfaces non couvertes plus grandes que la parcelle. La photo aérienne de la fiche (IGN) montre la parcelle et le bâti ; les liens Géoportail, Google Maps et Street View ouvrent le local dans un nouvel onglet quand vous cliquez.</p>
       <p><b>Secteur tarifaire</b> — chaque commune est découpée en secteurs ; le tarif d’une catégorie dépend du secteur où se trouve la section cadastrale du local. <b>Coefficient de localisation</b> : ajustement de ± 30 % au plus, parcelle par parcelle.</p>
       <p><b>Valeur locative brute</b> — surface pondérée × tarif × coefficient de localisation : le loyer annuel théorique du local selon la grille. <b>Neutralisation</b> : coefficient propre à chaque commune (souvent 0,2 à 0,4) qui ramène la valeur révisée de 2017 au niveau des anciennes valeurs.</p>
       <p><b>Planchonnement</b> — pour les locaux qui existaient au 1<sup>er</sup> janvier 2017, la valeur retenue est la moyenne entre la valeur révisée neutralisée et l’ancienne valeur locative (dite « 1970 »). Relève reconstitue cette ancienne valeur à partir de la ligne « cotisation lissée » de l’avis.</p>
@@ -258,10 +275,12 @@ function vlLocalHtml(l, i = 0) {
     <div class="grid2 vlgrid" style="margin-top:10px;align-items:start">
       <div><div class="tiny muted" style="margin-bottom:4px">${an.hypothese ? 'Surfaces retenues (votre hypothèse)' : 'Ce que dit la fiche « Gérer mes biens immobiliers »'}</div><table class="t"><tbody>${Object.keys(ACVL.POND).filter((k) => S[k]).map((k) => `<tr><td>${ACVL.LIB_SURF[k]}</td><td class="r num">${fmtM2(S[k])}</td><td class="r muted small">× ${ACVL.POND[k]}</td></tr>`).join('')}<tr><td><b>Surface pondérée</b></td><td class="r num"><b>${fmtM2(l.sp)}</b></td><td></td></tr></tbody></table>
         ${l.cadastre ? `<div class="tiny muted" style="margin:10px 0 4px">Ce que dit le cadastre (IGN)</div><div class="vlcad small"><span><b>${fmtM2(l.contenance)}</b> de parcelle</span><span><b>${fmtM2(l.emprise)}</b> de bâti au sol${l.cadastre.nb > 1 ? ` (${l.cadastre.nb} bâtiments)` : ''}</span><span><b>${l.niveaux || '?'}</b> niveau${l.niveaux > 1 ? 'x' : ''} ${l.niveauxSource === 'saisie' ? '(saisi)' : '(estimation IGN)'}</span>${l.cadastre.plancher ? `<span>≈ <b>${fmtM2(l.cadastre.plancher)}</b> de plancher possible</span>` : ''}</div>` : (l.cadastreErreur ? `<div class="tiny muted" style="margin-top:8px">Cadastre : ${esc(l.cadastreErreur)}</div>` : (A.S.cadastre === false ? '' : `<div class="tiny muted" style="margin-top:8px">Cadastre : lecture en attente</div>`))}
+        ${vlCarte(l)}
         ${vlChaine(l)}</div>
       <div>${questions.length ? `<div class="tiny muted" style="margin-bottom:4px">Questions à poser au client</div><div class="vlq">${questions.map((q) => `<label class="vlq-item"><input type="checkbox" data-coche="${esc(q.code)}" ${coches[q.code] ? 'checked' : ''}><span>${esc(q.q)}${q.sim ? ` <button class="btn ghost sm vlq-sim" data-simuler="${esc(q.code)}" title="Tester cette hypothèse dans le simulateur">Simuler${q.gain > 0 ? ` · ${fmtK(q.gain)} €/an` : ''}</button>` : ''}</span></label>`).join('')}</div>` : ''}
         ${signaux.length ? `<div class="tiny muted" style="margin:10px 0 4px">Pourquoi</div>${signaux.map((s) => `<div class="sig ${s.gravite >= 3 ? 'bad' : s.gravite === 2 ? 'warn' : ''}"><b>${esc(s.titre)}</b>${s.simulation && s.simulation.gain !== null ? ` — <span class="num ${s.simulation.gain > 0 ? 'ok' : 'muted'}">${s.simulation.gain > 0 ? 'enjeu ' + fmtK(s.simulation.gain) + ' € par an' : 'hypothèse défavorable (' + fmtK(-s.simulation.gain) + ' € de plus)'}</span>` : ''}<div class="small muted">${esc(s.texte)}</div></div>`).join('')}` : ''}
         <div class="vlactions">${act.do ? `<button class="btn primary sm" data-act="${act.do}" data-inv="${id}">${IC[act.ico] || ''} ${act.lib}</button>` : ''}${act.do !== 'question' && st.k !== 'OK' && st.k !== 'FAVORABLE' && calc ? `<button class="btn sm" data-act="question" data-inv="${id}">${IC.mail} Question au client</button>` : ''}${act.do !== 'releve' && ref ? `<button class="btn sm" data-act="releve" data-inv="${id}">${IC.doc} Relevé de propriété</button>` : ''}${act.do !== 'reclam' && st.k === 'PISTE' ? `<button class="btn sm" data-act="reclam" data-inv="${id}">${IC.edit} Brouillon de réclamation</button>` : ''}<button class="btn ghost sm" data-simexcl="${id}">${l.exclu ? 'Réintégrer ce local' : 'Écarter ce local'}</button></div>
+        <div class="vlactions vlvoir"><span class="tiny muted" style="align-self:center">Voir le local :</span>${vlLiens(l)}</div>
         ${act.detail ? `<div class="tiny muted" style="margin-top:4px">${esc(act.detail)}</div>` : ''}</div>
     </div>
     <details class="vlsim" style="margin-top:10px" id="sim-${id}"><summary class="small">Tester une hypothèse (catégorie, surfaces), renseigner l’occupant</summary>

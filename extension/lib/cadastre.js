@@ -20,6 +20,7 @@ const ACCAD = (() => {
   }
   const dedans = (pt, ring) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i], [xj, yj] = ring[j]; if (((yi > pt[1]) !== (yj > pt[1])) && (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi)) c = !c; } return c; };
   const anneaux = (geom) => geom.type === 'Polygon' ? [geom.coordinates[0]] : geom.type === 'MultiPolygon' ? geom.coordinates.map((p) => p[0]) : [];
+  const arrondi = (ring) => ring.map(([x, y]) => [Math.round(x * 1e6) / 1e6, Math.round(y * 1e6) / 1e6]);
   const surfacePolys = (geom) => anneaux(geom).reduce((s, r) => s + aire(r), 0);
   // Part d'un bâtiment située dans la parcelle : échantillonnage sur une grille (les bâtiments peuvent chevaucher plusieurs parcelles)
   function part(batGeom, parcRings) {
@@ -51,10 +52,10 @@ const ACCAD = (() => {
     for (const b of B) {
       const pr = b.properties || {}, s = surfacePolys(b.geometry), q = part(b.geometry, rings);
       if (s * q < 5) continue;
-      batiments.push({ surface: Math.round(s), part: Math.round(q * 100) / 100, dans: Math.round(s * q), niveaux: Math.max(1, Number(pr.nombre_d_etages) || 1), hauteur: pr.hauteur != null ? Number(pr.hauteur) : null, nature: pr.nature || '', usage: pr.usage_1 || '', leger: !!pr.construction_legere });
+      batiments.push({ surface: Math.round(s), part: Math.round(q * 100) / 100, dans: Math.round(s * q), niveaux: Math.max(1, Number(pr.nombre_d_etages) || 1), hauteur: pr.hauteur != null ? Number(pr.hauteur) : null, nature: pr.nature || '', usage: pr.usage_1 || '', leger: !!pr.construction_legere, geom: anneaux(b.geometry).map(arrondi) });
     }
     const emprise = batiments.reduce((s, b) => s + b.dans, 0), niveaux = batiments.length ? Math.max(...batiments.map((b) => b.niveaux)) : null;
-    return { idu, contenance, emprise: Math.round(emprise), nb: batiments.length, niveaux, plancher: Math.round(batiments.reduce((s, b) => s + b.dans * b.niveaux, 0)), batiments, at: Date.now() };
+    return { idu, contenance, emprise: Math.round(emprise), nb: batiments.length, niveaux, plancher: Math.round(batiments.reduce((s, b) => s + b.dans * b.niveaux, 0)), batiments, geom: rings.map(arrondi), bbox: [xs, ys, xe, ye].map((v) => Math.round(v * 1e6) / 1e6), centre: [Math.round((xs + xe) / 2 * 1e6) / 1e6, Math.round((ys + ye) / 2 * 1e6) / 1e6], at: Date.now() };
   }
   // Complète le magasin « cadastre » pour les locaux professionnels d'enregistrements « biens » : { insee, section, numero } sans entrée récente
   // depDe(b) et inseeDe(b) sont fournis par l'appelant (dépend des paramètres RVLLP chargés) ; opts.pause en ms entre deux parcelles
@@ -73,7 +74,20 @@ const ACCAD = (() => {
     }
     return { lus: n, erreurs };
   }
-  return { cle, insee, lire, completer, aire };
+  // Photo aérienne (orthophoto IGN, WMS public) centrée sur la parcelle, et transformation lon/lat → pixels pour dessiner par-dessus
+  function carte(cad, largeur = 600, hauteur = 400) {
+    if (!cad || !cad.bbox) return null;
+    const [xs, ys, xe, ye] = cad.bbox, lat0 = (ys + ye) / 2 * Math.PI / 180, kx = 111320 * Math.cos(lat0), ky = 110540;
+    const wM = Math.max((xe - xs) * kx, 40), hM = Math.max((ye - ys) * ky, 30);
+    let W = wM * 1.5, H = hM * 1.5; if (W / H > largeur / hauteur) H = W * hauteur / largeur; else W = H * largeur / hauteur;
+    const cx = (xs + xe) / 2, cy = (ys + ye) / 2, w = W / kx, h = H / ky;
+    const bb = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2];
+    const url = 'https://data.geopf.fr/wms-r/wms?' + new URLSearchParams({ SERVICE: 'WMS', VERSION: '1.3.0', REQUEST: 'GetMap', LAYERS: 'HR.ORTHOIMAGERY.ORTHOPHOTOS', STYLES: '', CRS: 'EPSG:4326', BBOX: `${bb[1]},${bb[0]},${bb[3]},${bb[2]}`, WIDTH: largeur, HEIGHT: hauteur, FORMAT: 'image/jpeg' });
+    const px = ([x, y]) => [((x - bb[0]) / (bb[2] - bb[0]) * largeur).toFixed(1), ((bb[3] - y) / (bb[3] - bb[1]) * hauteur).toFixed(1)];
+    const chemin = (ring) => ring.map((pt, i) => (i ? 'L' : 'M') + px(pt).join(',')).join(' ') + ' Z';
+    return { url, largeur, hauteur, bbox: bb, parcelle: (cad.geom || []).map(chemin), batiments: (cad.batiments || []).filter((b) => b.geom).map((b) => ({ d: b.geom.map(chemin).join(' '), niveaux: b.niveaux, surface: b.dans })), echelle: Math.round(W) };
+  }
+  return { cle, insee, lire, completer, aire, carte };
 })();
 if (typeof self !== 'undefined') self.ACCAD = ACCAD;
 if (typeof module !== 'undefined') module.exports = ACCAD;
