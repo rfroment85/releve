@@ -79,10 +79,16 @@ function summaryBlock(c) {
   const neuf = last ? c.avis.filter((a) => a.firstSeenAt && a.firstSeenAt >= (V.data.runs[1]?.at || 0) && a.firstSeenAt <= last.at + 1000).length : 0;
   const tfN = c.N.filter((a) => a.taxe === 'TF'), acN = c.N.filter((a) => a.taxe === 'CFE' && a.acompte), cfeN = c.N.filter((a) => a.taxe === 'CFE' && !a.acompte);
   const doss = (arr) => new Set(arr.map((a) => a.siren)).size;
-  const row = (t, s, pill) => `<div class="row"><div class="grow"><div class="t">${t}</div><div class="s">${s}</div></div>${pill}</div>`;
+  const row = (t, s, pill, go) => `<div class="row${go ? ' go' : ''}"${go ? ` data-go="${go}"` : ''}><div class="grow"><div class="t">${t}</div><div class="s">${s}</div></div>${pill}</div>`;
+  // Valeur locative des locaux professionnels : résumé écrit en fin de mise à jour (et par l'application)
+  const scopeSet = scopeMode() === 'moi' ? new Set(scopeSirens()) : null;
+  const vlr = ((V.data.vlResume && V.data.vlResume.locaux) || []).filter((l) => !scopeSet || scopeSet.has(l.siren));
+  const trop = vlr.filter((l) => l.statut === 'TROP'), piste = vlr.filter((l) => l.statut === 'PISTE'), enjeu = trop.reduce((x, l) => x + (l.enjeu || 0), 0);
+  const vlRow = V.settings.biens === false ? '' : row('Valeur locative des locaux pros', vlr.length ? `${plural(vlr.length, 'local contrôlé', 'locaux contrôlés')} au tarif officiel${trop.length ? ` · ${plural(trop.length, 'réclamation à préparer', 'réclamations à préparer')}` : piste.length ? ` · ${plural(piste.length, 'écart à creuser', 'écarts à creuser')}` : ''}` : 'Lue à la prochaine mise à jour', trop.length ? `<span class="pill bad">≈ ${Math.round(enjeu).toLocaleString('fr-FR')} €/an de trop</span>` : piste.length ? '<span class="pill warn">À creuser</span>' : vlr.length ? '<span class="pill ok">Rien à signaler</span>' : '<span class="pill">—</span>', 'valeur-locative');
   return `<div class="card rows">
     ${row(`Taxe foncière ${annee}`, `${plural(doss(tfN), 'dossier')} · ${plural(tfN.length, 'avis', 'avis')}`, tfN.length ? '<span class="pill ok">Disponible</span>' : '<span class="pill">Aucun avis</span>')}
     ${row(`CFE ${annee} · acomptes`, acN.length ? `${plural(doss(acN), 'dossier')}` : 'Aucun acompte', acN.length ? '<span class="pill ok">À jour</span>' : '<span class="pill">—</span>')}
+    ${vlRow}
     ${row(`CFE ${annee} · soldes`, cfeN.length ? `${plural(doss(cfeN), 'dossier')} · ${plural(cfeN.length, 'avis', 'avis')}` : `Mise en ligne attendue début novembre${c.aVenir.length ? ` · ${plural(c.aVenir.length, 'montant')} déjà connu${c.aVenir.length > 1 ? 's' : ''}` : ''}`, cfeN.length ? '<span class="pill ok">Disponible</span>' : '<span class="pill warn">Attendue</span>')}
   </div>
   ${open.length ? `<button class="btn" id="goList">${IC.list} ${plural(open.length, 'action')} dans ma liste de travail</button>` : ''}
@@ -215,6 +221,7 @@ function bind() {
     V.settings = await ACDB.saveSettings({ scope: b.dataset.s }); V.data.settings = V.settings; render();
   });
   document.querySelectorAll('.cat[data-cat]').forEach((b) => b.onclick = () => openApp('a-traiter/' + b.dataset.cat));
+  document.querySelectorAll('.row[data-go]').forEach((r) => r.onclick = () => openApp(r.dataset.go));
 }
 
 async function start(complet) {

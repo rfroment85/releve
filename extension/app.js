@@ -25,7 +25,7 @@ const A = { sel: new Set(), data: null, S: null, c: null, coll: null, q: '', sho
 // ======================================================================
 // Données
 // ======================================================================
-async function load() { A.data = await ACDB.loadAll(); A.S = A.data.settings; compute(); await vlCompute(); await loadClaude(); const b = await ACDB.get('meta', 'backupAt'); A.backupAt = b && b.at; A.habil = await ACDB.get('meta', 'habil'); const dl = await ACDB.get('meta', 'dossierList'); A.dossierList = (dl && dl.list) || []; const rc = await ACDB.get('meta', 'raccord'); A.raccord = (rc && rc.data) || {}; }
+async function load() { A.data = await ACDB.loadAll(); A.S = A.data.settings; compute(); await vlCompute(); compute(); await loadClaude(); const b = await ACDB.get('meta', 'backupAt'); A.backupAt = b && b.at; A.habil = await ACDB.get('meta', 'habil'); const dl = await ACDB.get('meta', 'dossierList'); A.dossierList = (dl && dl.list) || []; const rc = await ACDB.get('meta', 'raccord'); A.raccord = (rc && rc.data) || {}; }
 function scopeSirens() {
   const S = A.S, c = S.correspondance || {};
   const mine = Object.entries(c).filter(([, v]) => S.moi && v.collaborateur === S.moi).map(([k]) => k);
@@ -82,16 +82,17 @@ const route = () => { const h = decodeURIComponent(location.hash.slice(1)) || 'a
 function savedMinutes() { return A.data.avis.filter((a) => a.hasPdf).length * 2 + Object.values(A.data.tasks).filter((t) => t.status === 'done').length * 3; }
 function shell() {
   const { p } = route(), open = openTasks().length;
+  const nTrop = ((A.data.vlResume && A.data.vlResume.locaux) || []).filter((l) => l.statut === 'TROP' && (!scopeMoi() || scopeSirens().includes(l.siren))).length;
   const m = savedMinutes(), h = Math.floor(m / 60);
   $('#nav').innerHTML = `<div class="brand"><span class="logo">${IC.logo}</span>Relève</div>
-    ${ROUTES.map((r) => `<a href="#${r.k}" class="${p === r.k || (p === 'client' && r.k === 'clients') ? 'on' : ''}">${IC[r.i]} ${r.t}${r.k === 'a-traiter' && open ? `<span class="cnt">${open}</span>` : ''}</a>`).join('')}
+    ${ROUTES.map((r) => `<a href="#${r.k}" class="${p === r.k || (p === 'client' && r.k === 'clients') ? 'on' : ''}">${IC[r.i]} ${r.t}${r.k === 'a-traiter' && open ? `<span class="cnt">${open}</span>` : ''}${r.k === 'valeur-locative' && nTrop ? `<span class="cnt bad" title="${nTrop} local${nTrop > 1 ? 'aux' : ''} : trop payé probable">${nTrop}</span>` : ''}</a>`).join('')}
     <div class="sp"></div>
     ${m >= 30 ? `<div class="saved"><span class="tiny muted">Temps économisé cette campagne</span><b class="num">${h ? h + ' h' : m + ' min'}</b><span class="tiny muted">Estimation : 2 min par avis lu et classé à la main</span></div>` : ''}
     ${Object.values(A.data.tasks).filter((t) => t.status || t.note).length >= 10 && (!A.backupAt || Date.now() - A.backupAt > 30 * 864e5) ? `<a class="bknudge" href="#reglages">${IC.down} Pensez à sauvegarder vos données</a>` : ''}
     <div class="tiny muted" style="padding:10px 8px 0;display:flex;gap:6px">${IC.lock} Données sur ce poste</div>
     <div class="tiny muted auteur" style="padding:4px 8px 0">Créé par ${auteurLien()}, ${AUTEUR.titre}</div>`;
   const last = A.data.runs[0], mine = scopeSirens();
-  $('#topbar').innerHTML = `<label class="search">${IC.search}<input id="q" type="search" placeholder="Rechercher un client, un SIREN, une commune" value="${esc(A.qRaw || '')}"></label>
+  $('#topbar').innerHTML = `<label class="search">${IC.search}<input id="q" type="search" placeholder="Rechercher un client, un SIREN, une commune" value="${esc(A.qRaw || '')}"><kbd title="Touche / : aller à la recherche">/</kbd></label>
     <div class="seg" id="scope"><button data-s="moi" class="${scopeMoi() ? 'on' : ''}">Mon portefeuille${mine.length ? ` (${mine.length})` : ''}</button><button data-s="tous" class="${scopeMoi() ? '' : 'on'}">Tout le cabinet</button></div>
     <span class="fresh" id="fresh">${A.run && A.run.running ? `${IC.refresh} Mise à jour en cours · ${A.run.done}/${A.run.total || '…'} dossiers` : last ? `${IC.refresh} À jour · ${ago(last.at)}` : 'Aucune mise à jour'}</span>`;
   const q = $('#q');
@@ -117,6 +118,8 @@ function animerBarre() {
 function page() {
   const { p, arg } = route();
   const el = $('#page');
+  // Les entrées en cascade ne jouent qu'à l'arrivée sur un écran, pas à chaque rafraîchissement (recherche, case cochée…)
+  const cle = p + '/' + (arg || ''); el.classList.toggle('anim', cle !== A.routeKey); A.routeKey = cle;
   if (!A.data.avis.length && !['reglages', 'bienvenue'].includes(p)) { el.innerHTML = pageVide(); return; }
   const fn = { 'a-traiter': pageTraiter, clients: pageClients, client: pageClient, collectivites: pageCollectivites, calendrier: pageCalendrier, exports: pageExports, demander: pageDemander, habilitations: pageHabil, 'valeur-locative': pageValeurLocative, reglages: pageReglages, bienvenue: pageBienvenue, synthese: pageSynthese }[p] || pageTraiter;
   el.innerHTML = fn(arg);
@@ -134,7 +137,7 @@ function pageVide() {
 // ======================================================================
 // À traiter
 // ======================================================================
-const ACTION = { 'mail-verif': 'Demander confirmation', 'mail-rappel': 'Prévenir le client', 'mail-explication': 'Expliquer la hausse', 'mail-dette': 'Relancer le client', 'mail-amr': 'Prévenir le client', 'mail-prelevement': 'Proposer le prélèvement', reclamation: 'Préparer la réclamation', fiche: 'Voir l’analyse', pdf: 'Ouvrir l’avis' };
+const ACTION = { 'mail-verif': 'Demander confirmation', 'mail-rappel': 'Prévenir le client', 'mail-explication': 'Expliquer la hausse', 'mail-dette': 'Relancer le client', 'mail-amr': 'Prévenir le client', 'mail-prelevement': 'Proposer le prélèvement', reclamation: 'Préparer la réclamation', 'vl-reclam': 'Préparer la réclamation', 'vl-releve': 'Demander le relevé', fiche: 'Voir l’analyse', pdf: 'Ouvrir l’avis' };
 function itemHtml(t) {
   const late = /Échue/.test(t.echeance || '');
   const a = t.avis;
@@ -143,8 +146,8 @@ function itemHtml(t) {
     <button class="tick" data-act="tick" title="${t.done ? 'Remettre à faire' : 'Marquer comme fait'}">${IC.check}</button>
     <div class="who"><b data-act="fiche" title="${esc(t.nom)}">${esc(t.nom)}</b><span>${esc(t.lieu)}${t.collab ? ' · ' + esc(t.collab) : ''}</span><span class="mini-acts">${a && a.hasPdf ? `<a href="#" data-act="pdf" title="Ouvrir l’avis PDF">${IC.doc}</a>` : ''}<a href="#" data-act="note" title="Ajouter une note">${IC.edit}</a><a href="#" data-act="snooze" title="Reporter de 7 jours">${IC.snooze}</a><a href="#" data-act="site" title="Ouvrir ce dossier sur impots.gouv">${IC.ext}</a></span></div>
     <div class="what"><div class="q" title="${esc(t.quoi)}">${esc(t.quoi)}</div>${t.note ? `<div class="tnote">${IC.edit} ${esc(t.note)}</div>` : ''}</div>
-    <div class="amt num">${eur(t.montant)}<span class="due${late ? ' late' : ''}">${esc(t.echeance || '')}</span></div>
-    <div class="acts"><button class="btn sm${t.done ? '' : ' primary'}" data-act="main">${t.action.startsWith('mail') ? IC.mail : ''}${ACTION[t.action] || 'Ouvrir'}</button></div>
+    <div class="amt num">${t.montantLib ? esc(t.montantLib) : eur(t.montant)}<span class="due${late ? ' late' : ''}">${esc(t.echeance || '')}</span></div>
+    <div class="acts"><button class="btn sm${t.done ? '' : ' primary'}" data-act="main">${t.action.startsWith('mail') ? IC.mail : t.action.startsWith('vl') ? IC.ruler : ''}${ACTION[t.action] || 'Ouvrir'}</button></div>
   </div>`;
 }
 function pageTraiter(arg) {
@@ -270,6 +273,7 @@ function clientMailItems(siren, first) {
 }
 function runAction(t) {
   if (t.action === 'fiche') location.hash = 'client/' + t.siren;
+  else if (t.action.startsWith('vl')) location.hash = 'client/' + t.siren + '/vl';
   else if (t.action === 'pdf') openPdf(t.avis.id);
   else if (t.action === 'reclamation') openReclamation(t);
   else if (t.action.startsWith('mail')) { const items = t.done ? [mailItem(t)].filter(Boolean) : clientMailItems(t.siren, t); openComposer(items, t); }
@@ -298,15 +302,16 @@ const MODE_PILL = { NON: '<span class="pill acc">À payer par le client</span>',
 function pageClients() {
   const s = A.sort;
   const rows = clientsAgg().filter((o) => match(o.nom, o.siren, o.code, o.collab, [...o.communes].join(' ')));
-  const key = { nom: (o) => o.nom, code: (o) => o.code, collab: (o) => o.collab, tf: (o) => o.tf, cfe: (o) => o.cfe, evo: (o) => o.evo ?? -1e9, mode: (o) => o.mode, open: (o) => o.open * 1e6 + o.dette, dette: (o) => o.dette }[s.k] || ((o) => o.nom);
+  const vlk = (o) => { const r = vlParClient(o.siren); return r ? (r.k === 'TROP' ? 2e6 + r.enjeu : r.k === 'PISTE' ? 1e6 + r.enjeuP : r.k === 'QUESTION' ? 5e5 : 1) : 0; };
+  const key = { nom: (o) => o.nom, code: (o) => o.code, collab: (o) => o.collab, tf: (o) => o.tf, cfe: (o) => o.cfe, evo: (o) => o.evo ?? -1e9, mode: (o) => o.mode, open: (o) => o.open * 1e6 + o.dette, dette: (o) => o.dette, vl: vlk }[s.k] || ((o) => o.nom);
   rows.sort((a, b) => { const x = key(a), y = key(b); return (typeof x === 'string' ? x.localeCompare(y, 'fr') : x - y) * s.dir; });
   const th = (k, t, r) => `<th class="s${r ? ' r' : ''}" data-sort="${k}">${t}${s.k === k ? (s.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
   const nbDoss = A.data.dossiers.length;
   return `<div class="ph"><div><h1>Clients</h1><div class="sub">${plural(rows.length, 'client')} avec des avis ${A.c.annee} ou ${A.c.anneeN1}${nbDoss ? ` · ${plural(nbDoss, 'dossier contrôlé', 'dossiers contrôlés')}` : ''}</div></div></div>
-  <div class="card"><table class="t"><thead><tr>${th('nom', 'Client')}${th('code', 'Code')}${th('collab', 'Collaborateur')}${th('tf', `Taxe foncière ${A.c.annee}`, 1)}${th('cfe', `CFE ${A.c.annee}`, 1)}${th('evo', 'Évolution', 1)}${th('mode', 'Paiement')}${th('open', 'À traiter', 1)}</tr></thead>
+  <div class="card"><table class="t"><thead><tr>${th('nom', 'Client')}${th('code', 'Code')}${th('collab', 'Collaborateur')}${th('tf', `Taxe foncière ${A.c.annee}`, 1)}${th('cfe', `CFE ${A.c.annee}`, 1)}${th('evo', 'Évolution', 1)}${th('mode', 'Paiement')}${th('vl', 'Valeur locative')}${th('open', 'À traiter', 1)}</tr></thead>
   <tbody>${rows.slice(0, 600).map((o) => `<tr class="click" data-siren="${o.siren}"><td><b>${esc(o.nom)}</b><div class="tiny muted">${fmtSiren(o.siren)}${o.communes.size ? ' · ' + esc([...o.communes].slice(0, 3).join(', ')) + (o.communes.size > 3 ? '…' : '') : ''}</div></td>
     <td>${esc(o.code)}</td><td>${esc(o.collab)}</td><td class="r num">${o.tf ? eur(o.tf) : '<span class="muted">—</span>'}</td><td class="r num">${o.cfe ? eur(o.cfe) : '<span class="muted">—</span>'}</td>
-    <td class="r num ${o.evo > 0.5 ? 'up' : o.evo < -0.5 ? 'dn' : ''}">${o.evo === null ? '<span class="muted">—</span>' : pcv(o.evo)}</td><td>${MODE_PILL[o.mode]}</td>
+    <td class="r num ${o.evo > 0.5 ? 'up' : o.evo < -0.5 ? 'dn' : ''}">${o.evo === null ? '<span class="muted">—</span>' : pcv(o.evo)}</td><td>${MODE_PILL[o.mode]}</td><td>${vlPillClient(o.siren)}</td>
     <td class="r">${o.open ? `<span class="pill acc">${o.open}</span>` : ''}${o.dette ? ` <span class="pill bad" title="Créances non soldées">${eur(o.dette)}</span>` : ''}</td></tr>`).join('')}</tbody></table>
   ${rows.length > 600 ? `<div class="more">600 premiers clients affichés : affinez avec la recherche.</div>` : ''}${!rows.length ? '<div class="empty">Aucun client pour cette recherche.</div>' : ''}</div>`;
 }
@@ -362,7 +367,7 @@ function pageClient(arg) {
   <div class="r">${main ? `<button class="btn primary" id="mailMain">${IC.mail} Préparer le message${clientMailItems(siren).length > 1 ? ` (${clientMailItems(siren).length} points)` : ''}</button>` : ''}${main && main.hasPdf ? `<button class="btn" data-pdf="${esc(main.id)}">${IC.doc} Ouvrir l’avis ${A.c.annee}</button>` : ''}<button class="btn" id="onSite" title="Sélectionne ce dossier dans votre espace professionnel">${IC.ext} impots.gouv</button></div></div>
   <div class="badges">${N.filter((a) => a.n1 && !a.acompte).map((a) => `<span class="pill ${a.d.pct > 0.5 ? (a.hausse ? 'bad' : 'warn') : 'ok'}">${TAXE_LABEL[a.taxe]} ${esc(a.commune || '')} : ${pcv(a.d.pct)}</span>`).join('')}
     ${[...new Set(N.map((a) => a.prel).filter(Boolean))].map((p) => p === 'NON' ? '<span class="pill acc">À payer par le client</span>' : p === 'MENSUEL' ? '<span class="pill">Mensualisé : rien à payer en plus</span>' : '<span class="pill ok">Prélevé à l’échéance</span>').join('')}
-    ${detteDue ? `<span class="pill bad">${eur(detteDue)} de créances échues</span>` : dettes.length || A.data.dettes.some((x) => x.siren === siren) ? '<span class="pill ok">Aucune créance en retard</span>' : ''}</div>
+    ${detteDue ? `<span class="pill bad">${eur(detteDue)} de créances échues</span>` : dettes.length || A.data.dettes.some((x) => x.siren === siren) ? '<span class="pill ok">Aucune créance en retard</span>' : ''}${vlPillClient(siren)}</div>
   ${tasks.length ? `<div class="card items" style="margin-bottom:16px">${tasks.map(itemHtml).join('')}</div>` : ''}
   ${N.map((a) => `<div class="card av"><div class="hd"><div><h2 style="margin:0">${TAXE_LABEL[a.taxe]} ${a.annee}${a.acompte ? ' · acompte' : ''} · ${esc(a.commune || '')}</h2><div class="small muted">${esc(a.role || '')}${a.reference ? ' · réf. ' + esc(a.reference) : ''} · ${esc(a.paiement)}${a.dateLimite ? ' · date limite ' + esc(a.dateLimite) : ''}</div></div>
     <div class="m"><b class="num">${eur(a.m)}</b>${a.n1 ? `<span class="small muted num">${eur(a.n1.m)} en ${A.c.anneeN1} · <span class="${a.d.delta > 0.5 ? 'up' : 'dn'}">${sgn(a.d.delta)} (${pcv(a.d.pct)})</span></span>` : ''}</div></div>
@@ -426,7 +431,7 @@ function pageCollectivites() {
   if (!groups.length) return `<div class="ph"><div><h1>Collectivités</h1></div></div><div class="card empty">Aucun avis de taxe foncière ${A.c.annee} détaillé sur ce poste pour l’instant.</div>`;
   const d = P.cN - P.cN1;
   const top = decisions.slice(0, 4);
-  const lead = `Les cotisations de vos clients ${d >= 0 ? 'augmentent' : 'baissent'} de <b class="num">${sgn(d)}</b>${P.cN1 ? ` (${pcv(d / P.cN1 * 100)})` : ''}. ${P.taux > 0.5 ? `Les taux votés en expliquent <b class="num">${sgn(P.taux)}</b>${top.length ? `, dont ${plural(top.length, 'décision')} qui pèse${top.length > 1 ? 'nt' : ''} le plus : ${top.map((x) => `${esc(x.nom.toLowerCase())} de ${esc(x.communes.slice(0, 2).join(', '))}${x.communes.length > 2 ? ` et ${x.communes.length - 2} autre${x.communes.length > 3 ? 's' : ''}` : ''}`).join(' ; ')}` : ''}.` : 'Aucune hausse de taux significative.'}`;
+  const lead = `Les cotisations de vos clients ${d >= 0 ? 'augmentent' : 'baissent'} de <b class="num">${sgn(d)}</b>${P.cN1 ? ` (${pcv(d / P.cN1 * 100)})` : ''}. ${P.taux > 0.5 ? `Les taux votés en expliquent <b class="num">${sgn(P.taux)}</b>${top.length ? `, dont ${plural(top.length, 'décision')} qui pèse${top.length > 1 ? 'nt' : ''} le plus : ${top.map((x) => `${esc(x.nom.toLowerCase().replace(/\bgemapi\b/, 'GEMAPI').replace(/\bcfe\b/, 'CFE'))} de ${esc(x.communes.slice(0, 2).join(', '))}${x.communes.length > 2 ? ` et ${x.communes.length - 2} autre${x.communes.length > 3 ? 's' : ''}` : ''}`).join(' ; ')}` : ''}.` : 'Aucune hausse de taux significative.'}`;
   const qs = groups.filter((g) => match(g.nom, ...g.list.map((a) => a.nom)));
   const maxAbs = Math.max(1, ...qs.map((g) => Math.abs(g.taux) + Math.abs(g.bases) + Math.abs(g.nouveaux)));
   return `<div class="ph"><div><h1>Ce qui a changé dans vos collectivités</h1><div class="sub">Taxe foncière ${A.c.annee} · ${plural(P.avis, 'avis', 'avis')} ${scopeMoi() ? 'de votre portefeuille' : 'du cabinet'} · montants hors frais de gestion</div></div></div>
@@ -488,7 +493,7 @@ function pageExports() {
     <div class="card exp"><h2>${IC.down} Classeur Excel de la campagne</h2><p>Une feuille par usage : À traiter, avis ${A.c.annee} avec l’analyse des hausses, collectivités, dettes fiscales. Filtres et volets figés prêts à l’emploi.</p><button class="btn primary" data-exp="xlsx">Télécharger le classeur</button></div>
     <div class="card exp"><h2>${IC.doc} Avis PDF (.zip)</h2><p>${plural(N.filter((a) => a.hasPdf).length, 'avis', 'avis')} ${A.c.annee} et ${plural(n1.filter((a) => a.hasPdf).length, 'avis', 'avis')} ${A.c.anneeN1}, rangés dans un dossier par client.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-exp="zip">Avis ${A.c.annee}</button><button class="btn" data-exp="zip2">Avis ${A.c.annee} et ${A.c.anneeN1}</button></div></div>
     <div class="card exp"><h2>${IC.mail} Brouillons de mails (.zip)</h2><p>Un seul brouillon par client, qui regroupe tous ses points ouverts (paiements, hausses, créances, prélèvement), avis en pièce jointe. Chaque fichier s’ouvre dans Outlook ; rien n’est envoyé sans vous.</p><button class="btn" data-exp="mails">Préparer ${plural(new Set(openTasks().filter((t) => mailItem(t)).map((t) => t.siren)).size, 'brouillon')}</button></div>
-    <div class="card exp"><h2>${IC.ruler} Valeur locative des locaux professionnels</h2><p>Un local par ligne : surfaces déclarées, secteur et tarif, base recalculée, base de l’avis, verdict, gain estimé, points à vérifier et questions au client.</p><button class="btn" data-exp="vlxlsx">Télécharger le classeur des locaux</button></div>
+    <div class="card exp"><h2>${IC.ruler} Valeur locative des locaux professionnels</h2><p>Un local par ligne : statut (trop payé probable, possible, question, conforme), enjeu par an, action à faire, surfaces déclarées, secteur et tarif, base recalculée, base de l’avis, points à vérifier et questions au client.</p><button class="btn" data-exp="vlxlsx">Télécharger le classeur des locaux</button></div>
     <div class="card exp"><h2>${IC.print} Synthèse pour l’associé</h2><p>Une page : chiffres clés, actions par catégorie, plus fortes hausses, décisions des collectivités. À imprimer ou enregistrer en PDF.</p><a class="btn" href="#synthese">Ouvrir la synthèse</a></div>
   </div>`;
 }
@@ -608,7 +613,11 @@ function openReclamation(t) {
   const rp = $('#rpdf'); if (rp) rp.onclick = () => openPdf(t.avis.id);
   $('#rdone').onclick = () => { close(); markDone(t.id); };
 }
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#modal').hidden) $('#modal').hidden = true; });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#modal').hidden) $('#modal').hidden = true;
+  // « / » : aller à la recherche (hors champ de saisie)
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) { const q = $('#q'); if (q) { e.preventDefault(); q.focus(); q.select(); } }
+});
 
 // ======================================================================
 // Réglages
@@ -636,8 +645,11 @@ function pageReglages() {
       <div class="help">Les soldes inférieurs à ce montant (reliquats de quelques centimes) restent visibles dans la fiche client mais n’entrent pas dans la liste de travail.</div>
       <div class="inl"><span>Ignorer les soldes inférieurs à</span><input type="number" id="sDette" min="0" step="1" value="${S.seuilDette ?? 5}"><span>€</span><button class="btn sm" id="saveDette">Enregistrer</button></div>
       <label class="inl" style="margin-top:10px;font-weight:400"><input type="checkbox" id="amrOn" ${S.amr !== false ? 'checked' : ''}> Lire aussi les documents à payer de « Payer › Dette fiscale » (avis de mise en recouvrement : pénalités, rappels). Lecture seule, aucun paiement.</label>
-      <label class="inl" style="margin-top:6px;font-weight:400"><input type="checkbox" id="biensOn" ${S.biens !== false ? 'checked' : ''}> Lire aussi les biens immobiliers de « Gérer mes biens immobiliers » (surfaces, catégorie, parcelle de chaque local professionnel), pour le contrôle de la valeur locative. Lecture seule, aucune déclaration.</label>
-      <label class="inl" style="margin-top:6px;font-weight:400"><input type="checkbox" id="cadastreOn" ${S.cadastre !== false ? 'checked' : ''}> Vérifier au cadastre (IGN) la surface de la parcelle et l’emprise du bâti de chaque local professionnel. Seule la référence cadastrale (commune, section, numéro) est transmise à la Géoplateforme de l’IGN : jamais le nom du client, le SIREN ni l’adresse. Résultat gardé sur ce poste un an.</label></div>
+</div>
+    <div class="card"><label class="f">Valeur locative des locaux professionnels</label>
+      <div class="help">Relève refait le calcul de la taxe foncière de chaque local professionnel au tarif officiel et repère les clients qui paient probablement trop. <a href="#valeur-locative/lexique">Comprendre les termes</a>.</div>
+      <label class="inl" style="margin-top:6px;font-weight:400"><input type="checkbox" id="biensOn" ${S.biens !== false ? 'checked' : ''}> Lire les biens immobiliers de « Gérer mes biens immobiliers » à chaque mise à jour (surfaces, catégorie, parcelle de chaque local professionnel). Lecture seule, aucune déclaration.</label>
+      <label class="inl" style="margin-top:6px;font-weight:400"><input type="checkbox" id="cadastreOn" ${S.cadastre !== false ? 'checked' : ''}> Vérifier au cadastre (IGN) la surface de la parcelle, l’emprise du bâti et la photo aérienne de chaque local. Seule la référence cadastrale (commune, section, numéro) est transmise à la Géoplateforme de l’IGN : jamais le nom du client, le SIREN ni l’adresse. Résultat gardé sur ce poste un an.</label></div>
     <div class="card" id="mcpCard"><label class="f">Connexion à Claude (facultative)</label>
       <div class="help">Permet de poser des questions à Claude sur vos avis (« quels clients doivent payer avant le 15/12 ? », « prépare le message pour… ») depuis l’application Claude, grâce au connecteur Relève à installer dans Claude (<a href="https://releveavis.netlify.app/mode-emploi.html#claude" target="_blank">mode d’emploi</a>). Avec les noms masqués, Claude envoie ses réponses dans « Demander › Réponses de Claude », où les vrais noms sont remis sur ce poste.</div>
       <div class="warnbox" style="background:var(--warn-bg);color:#6B4500;padding:10px 12px;border-radius:9px;font-size:13px;margin:6px 0 10px">Quand cette connexion est active, les informations demandées par Claude (noms, montants, situation fiscale des clients) lui sont transmises pour produire ses réponses : elles quittent alors le poste. À n’activer qu’avec un compte Claude du cabinet et dans le respect de votre charte IA et du secret professionnel.</div>
@@ -733,13 +745,13 @@ function bindReglages() {
 function pageBienvenue() {
   return `<div class="welcome"><span class="logo" style="width:44px;height:44px;border-radius:12px">${IC.logo}</span>
   <h1 style="margin-top:14px">Bienvenue dans Relève</h1>
-  <p class="lead" style="margin-top:8px">Les avis de taxe foncière et de CFE de tous vos clients, lus dans votre espace professionnel impots.gouv, analysés et rangés par urgence.</p>
+  <p class="lead" style="margin-top:8px">Les avis de taxe foncière et de CFE de tous vos clients, lus dans votre espace professionnel impots.gouv, analysés et rangés par urgence. Et, pour chaque local professionnel, le calcul de l’administration refait au tarif officiel pour repérer ceux qui paient trop.</p>
   <div class="steps">
     <div class="step card"><div><b>Épinglez l’icône</b><div class="muted small">Cliquez sur l’icône puzzle à droite de la barre d’adresse, puis sur la punaise à côté de Relève.</div></div></div>
     <div class="step card"><div><b>Connectez-vous à votre espace professionnel impots.gouv</b><div class="muted small">Comme d’habitude : vous saisissez vous-même vos identifiants, l’extension ne les voit jamais.</div></div></div>
     <div class="step card"><div><b>Cliquez sur l’icône, puis sur « Mettre à jour mes clients »</b><div class="muted small">La première fois prend quelques dizaines de minutes pour un gros cabinet ; ensuite seuls les nouveaux avis sont lus.</div></div></div>
   </div>
-  <div class="card av"><h3>${IC.shield} Confidentialité</h3><p class="small" style="margin:0;color:var(--ink2)">Relève lit uniquement les pages « avis de CFE », « avis de taxe foncière », « situation de la dette fiscale » et, à votre demande, la liste de vos habilitations. Il ne paie rien, n’envoie aucun message, ne modifie rien sur le site. Les avis et analyses restent dans le navigateur de ce poste ; aucun serveur ne les reçoit.</p></div>
+  <div class="card av"><h3>${IC.shield} Confidentialité</h3><p class="small" style="margin:0;color:var(--ink2)">Relève lit uniquement les pages « avis de CFE », « avis de taxe foncière », « situation de la dette fiscale », « Gérer mes biens immobiliers » et, à votre demande, la liste de vos habilitations. Il ne paie rien, n’envoie aucun message, ne modifie rien sur le site. Les avis et analyses restent dans le navigateur de ce poste ; aucun serveur ne les reçoit.</p></div>
   <div style="display:flex;gap:8px"><a class="btn primary" href="https://cfspro.impots.gouv.fr/mire/accueil.do" target="_blank">${IC.ext} Ouvrir mon espace professionnel</a><a class="btn" href="#reglages">Réglages facultatifs</a></div></div>
   <p class="tiny muted" style="margin-top:18px">Relève est créé par ${auteurLien()}, ${AUTEUR.titre}. Code source ouvert (EUPL 1.2).</p>`;
 }
@@ -757,12 +769,17 @@ function pageSynthese() {
   <div class="kpis" style="margin-top:16px">
     <div class="card"><div class="l">Avis ${C.annee}</div><div class="v num">${C.N.length}</div><div class="l">${plural(new Set(C.N.map((a) => a.siren)).size, 'client')}</div></div>
     <div class="card"><div class="l">Évolution à périmètre comparable</div><div class="v num">${C.tot.n1 ? pcv((C.tot.n / C.tot.n1 - 1) * 100) : '—'}</div><div class="l num">${eur(C.tot.n1)} → ${eur(C.tot.n)}</div></div>
-    <div class="card"><div class="l">Actions ouvertes</div><div class="v num">${open.length}</div><div class="l">${C.CATS.map((k) => { const n = open.filter((t) => t.cat === k.key).length; return n ? `${n} ${k.titre.toLowerCase()}` : ''; }).filter(Boolean).slice(0, 2).join(' · ')}</div></div>
+    <div class="card"><div class="l">Actions ouvertes</div><div class="v num">${open.length}</div><div class="l">${C.CATS.map((k) => { const n = open.filter((t) => t.cat === k.key).length; return n ? `${k.titre.toLowerCase()} : ${n}` : ''; }).filter(Boolean).slice(0, 2).join(' · ')}</div></div>
     <div class="card"><div class="l">Créances échues</div><div class="v num">${eur(dette)}</div><div class="l">dettes fiscales et AMR à payer</div></div>
   </div>
   <h2>Actions par catégorie</h2><table class="t"><tbody>${C.CATS.map((k) => { const n = open.filter((t) => t.cat === k.key); return `<tr><td><b>${esc(k.titre)}</b><div class="tiny muted">${esc(k.aide)}</div></td><td class="r num">${n.length}</td><td class="r num">${eur(n.reduce((s, t) => s + (t.montant || 0), 0))}</td></tr>`; }).join('')}</tbody></table>
   ${P.avis ? `<h2 style="margin-top:20px">Taxe foncière : origine de l’évolution</h2><p>${eur(P.cN1)} → ${eur(P.cN)} (${sgn(P.cN - P.cN1)}) : taux votés ${sgn(P.taux)}, bases ${sgn(P.bases)}, biens nouvellement imposés ${sgn(P.nouveaux)}.</p>
   ${A.coll.decisions.length ? `<table class="t"><thead><tr><th>Décision</th><th>Communes</th><th class="r">Impact</th></tr></thead><tbody>${A.coll.decisions.slice(0, 6).map((x) => `<tr><td>${esc(x.nom)} : ${esc(x.tN1)} % → ${esc(x.tN)} %</td><td class="small">${esc(x.communes.slice(0, 4).join(', '))}${x.communes.length > 4 ? '…' : ''}</td><td class="r num">${sgn(x.eff)}</td></tr>`).join('')}</tbody></table>` : ''}` : ''}
+  ${(() => { const L = ((A.data.vlResume && A.data.vlResume.locaux) || []).filter((l) => !scopeMoi() || scopeSirens().includes(l.siren)); if (!L.length) return ''; const trop = L.filter((l) => l.statut === 'TROP'), piste = L.filter((l) => l.statut === 'PISTE'), e = trop.reduce((s, l) => s + l.enjeu, 0), eP = piste.reduce((s, l) => s + l.enjeu, 0);
+    const nQ = L.filter((l) => l.statut === 'QUESTION').length, nOk = L.filter((l) => l.statut === 'OK' || l.statut === 'FAVORABLE').length;
+    const parts = [trop.length ? `<b>${plural(trop.length, 'trop payé probable', 'trop payés probables')}</b> (${eur(e)} par an, ${trop.length > 1 ? 'réclamations' : 'réclamation'} à préparer)` : '', piste.length ? `${plural(piste.length, 'trop payé possible', 'trop payés possibles')} (${eur(eP)} par an, ${piste.length > 1 ? 'relevés' : 'relevé'} de propriété à demander)` : '', nQ ? `${plural(nQ, 'question')} au client` : '', nOk ? `${plural(nOk, 'local conforme', 'locaux conformes')}` : ''].filter(Boolean);
+    return `<h2 style="margin-top:20px">Valeur locative des locaux professionnels</h2><p>${plural(L.length, 'local contrôlé', 'locaux contrôlés')} au tarif officiel${parts.length ? ' : ' + parts.join(', ') : ''}.</p>
+    ${trop.length || piste.length ? `<table class="t"><thead><tr><th>Client</th><th>Local</th><th>Statut</th><th class="r">Enjeu / an</th></tr></thead><tbody>${[...trop, ...piste].slice(0, 8).map((l) => `<tr><td><b>${esc(l.nom)}</b></td><td class="small">${esc(l.adresse)} · ${esc((l.ville || '').replace(/\s*\(.*\)\s*$/, ''))}</td><td>${esc(l.libelle)}</td><td class="r num">${eur(l.enjeu)}</td></tr>`).join('')}</tbody></table>` : ''}`; })()}
   ${hausses.length ? `<h2 style="margin-top:20px">Plus fortes hausses</h2><table class="t"><thead><tr><th>Client</th><th>Avis</th><th class="r">${C.anneeN1}</th><th class="r">${C.annee}</th><th class="r">Écart</th><th>Analyse</th></tr></thead><tbody>${hausses.map((a) => `<tr><td><b>${esc(a.nom)}</b></td><td class="small">${TAXE_LABEL[a.taxe]} ${esc(a.commune || '')}</td><td class="r num">${eur(a.n1.m)}</td><td class="r num">${eur(a.m)}</td><td class="r num up">${sgn(a.d.delta)}</td><td class="tiny">${esc((a.d.verdict || '').length > 150 ? a.d.verdict.slice(0, 150).replace(/\s+\S*$/, '') + '…' : (a.d.verdict || ''))}</td></tr>`).join('')}</tbody></table>` : ''}
   </div>`;
 }

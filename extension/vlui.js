@@ -38,10 +38,30 @@ const vlStatut = (l) => ACVL.statut(l);
 
 // ---- Préparation : analyse de tous les locaux professionnels lus dans GMBI (lib/vl.js) ----
 async function vlCompute() {
-  VL.locaux = await ACVL.portefeuille({ biens: A.data.biens || [], avis: A.data.avis, saisies: A.data.vl || {}, annee: A.c.annee, correspondance: A.S.correspondance || {}, cache: VL.dep, erreurs: VL.erreursDep, cadastre: A.data.cadastre || {} });
+  const annee = ACA.anneeCampagne();
+  VL.locaux = await ACVL.portefeuille({ biens: A.data.biens || [], avis: A.data.avis, saisies: A.data.vl || {}, annee, correspondance: A.S.correspondance || {}, cache: VL.dep, erreurs: VL.erreursDep, cadastre: A.data.cadastre || {} });
   for (const l of VL.locaux) l.st = vlStatut(l);
   VL.locaux.sort((x, y) => x.st.ordre - y.st.ordre || (y.st.enjeu || 0) - (x.st.enjeu || 0) || (y.analyse && y.analyse.ref ? y.analyse.ref.base : 0) - (x.analyse && x.analyse.ref ? x.analyse.ref.base : 0));
+  // Résumé pour la liste de travail (ACA.campagne), le volet latéral, le bandeau impots.gouv et l'outil Claude : réécrit à chaque analyse
+  const resume = { key: 'vlResume', at: Date.now(), annee: String(annee), locaux: VL.locaux.map(ACVL.resume) };
+  const avant = JSON.stringify((A.data.vlResume || {}).locaux || []);
+  if (avant !== JSON.stringify(resume.locaux)) { try { await ACDB.put('meta', resume); } catch {} }
+  A.data.vlResume = resume;
+  compute();
   return VL.locaux;
+}
+// Résumé par client (meilleur statut) pour la liste des clients et la fiche
+function vlParClient(siren) {
+  const L = ((A.data.vlResume && A.data.vlResume.locaux) || []).filter((l) => l.siren === siren);
+  if (!L.length) return null;
+  const trop = L.filter((l) => l.statut === 'TROP'), piste = L.filter((l) => l.statut === 'PISTE'), q = L.filter((l) => l.statut === 'QUESTION');
+  const enjeu = trop.reduce((s, l) => s + (l.enjeu || 0), 0), enjeuP = piste.reduce((s, l) => s + (l.enjeu || 0), 0);
+  return { n: L.length, trop: trop.length, piste: piste.length, question: q.length, enjeu, enjeuP, k: trop.length ? 'TROP' : piste.length ? 'PISTE' : q.length ? 'QUESTION' : L.some((l) => l.statut === 'OK') ? 'OK' : L.some((l) => l.statut === 'FAVORABLE') ? 'FAVORABLE' : L[0].statut };
+}
+function vlPillClient(siren, lien = true) {
+  const r = vlParClient(siren); if (!r) return '';
+  const html = r.k === 'TROP' ? `<span class="pill bad vlst" title="Valeur locative : ${r.trop} local${r.trop > 1 ? 'aux' : ''}, réclamation à préparer">Trop payé probable ≈ ${fmtK(r.enjeu)} €/an</span>` : r.k === 'PISTE' ? `<span class="pill warn vlst" title="Valeur locative : l’avis dépasse le recalcul, relevé de propriété à demander">Trop payé possible ≈ ${fmtK(r.enjeuP)} €/an</span>` : r.k === 'QUESTION' ? `<span class="pill acc vlst">Valeur locative : question au client</span>` : r.k === 'OK' ? `<span class="pill ok vlst" title="Valeur locative : base de l’avis retrouvée au tarif officiel">Valeur locative conforme</span>` : r.k === 'FAVORABLE' ? `<span class="pill ok vlst" title="Valeur locative : l’avis est plus bas que la grille, ne rien réclamer">Valeur locative : rien à réclamer</span>` : '';
+  return lien && html ? `<a href="#client/${siren}/vl" style="text-decoration:none">${html}</a>` : html;
 }
 // Cadastre (IGN) : complète en arrière-plan les parcelles non encore lues (une fois par an), puis recalcule
 async function vlCadastre() {
@@ -153,7 +173,7 @@ function bindValeurLocative(arg) {
   $$('[data-niv]').forEach((b) => b.onclick = async () => { A.S = await ACDB.saveSettings({ vlNiveau: b.dataset.niv }); A.data.settings = A.S; page(); });
   $$('.vlrow').forEach((r) => r.onclick = (ev) => { if (ev.target.closest('a')) return; location.hash = r.dataset.go; });
   const tb = $('#vlTourBtn'); if (tb) tb.onclick = () => vlTour(true);
-  vlCountUp(); vlMigrer(); vlCadastre();
+  if ($('#page').classList.contains('anim')) vlCountUp(); vlMigrer(); vlCadastre();
   if (String(arg || '') === 'lexique') { const e = $('#lexique'); if (e) { e.open = true; setTimeout(() => e.scrollIntoView({ block: 'start' }), 50); } }
   else if (!A.S.vlTourVu && vlBiensStats().dossiers) setTimeout(() => vlTour(false), 600);
 }
@@ -265,7 +285,7 @@ function vlLocalHtml(l, i = 0) {
   const occ = l.occupant || {};
   const catOpts = (() => { const fam = {}; for (const [c, lb] of Object.entries(ACVL.CATEGORIES)) (fam[c.slice(0, 3)] = fam[c.slice(0, 3)] || []).push([c, lb]); const noms = { MAG: 'Magasins et commerces', BUR: 'Bureaux', DEP: 'Dépôts et parkings', ATE: 'Ateliers', HOT: 'Hôtels et hébergement', SPE: 'Sport, spectacle, loisirs', ENS: 'Enseignement', CLI: 'Santé', IND: 'Industrie', EXC: 'Autres' }; return Object.entries(fam).map(([f, arr]) => `<optgroup label="${noms[f] || f}">${arr.map(([c, lb]) => `<option value="${c}" ${c === l.categorie ? 'selected' : ''}>${esc(ACVL.COURT[c] || lb)} (${c})</option>`).join('')}</optgroup>`).join(''); })();
   const questions = signaux.filter((s) => s.question).map((s) => ({ code: s.code, q: s.question, sim: s.hypothese && s.simulation ? s : null, gain: s.simulation && s.simulation.gain }));
-  if (!questions.length && calc && st.k !== 'HORS') questions.push({ code: 'USAGE', q: `Le local sert-il bien de ${ACVL.COURT[l.categorie] || 'ce type de local'} ? (une partie en atelier, stockage ou bureaux change le tarif)` }, { code: 'SURF', q: `Les ${fmtM2(S.p1 || 0)} de surface principale sont-ils tous utilisés pour l’activité ? (réserves, sanitaires, parkings comptent moins)` });
+  if (!questions.length && calc && st.k !== 'HORS') questions.push({ code: 'USAGE', q: `Le local correspond-il bien à « ${ACVL.COURT[l.categorie] || l.categorieLibelle || 'ce type de local'} » ? (une partie en atelier, stockage ou bureaux change le tarif)` }, { code: 'SURF', q: `Les ${fmtM2(S.p1 || 0)} de surface principale sont-ils tous utilisés pour l’activité ? (réserves, sanitaires, parkings comptent moins)` });
   return `<div class="vlocal ${st.ton}" data-vl="${id}" style="--i:${i}">
     <div class="hd" style="margin-top:14px"><div><b>${esc(l.adresse)}</b> <span class="small muted">${esc(l.ville)} · parcelle ${esc(l.prefixe ? l.prefixe + ' ' : '')}${esc(l.section || '?')} ${esc(l.parcelle || '')}${l.lot ? ' · lot ' + esc(l.lot) : ''}${l.batiment ? ' · bât. ' + esc(l.batiment) : ''} · n° ${id}</span>
       <div class="small">${l.categorieDeclaree && l.categorie !== l.categorieDeclaree ? `Catégorie retenue ${catPill(l.categorie, 'pill acc')} <span class="muted">(fiche : ${ACVL.nomCat(l.categorieDeclaree)})</span>` : `${esc(ACVL.COURT[l.categorie] || l.categorieLibelle)}${l.categorie && l.categorie !== 'HORS' ? ` <span class="pill" title="${esc(l.categorieLibelle)}">${l.categorie}</span>` : ''}`}${l.droit && !/^Propri/.test(l.droit) ? ` <span class="pill acc">${esc(l.droit)}</span>` : ''}</div></div>

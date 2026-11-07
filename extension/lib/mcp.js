@@ -39,7 +39,7 @@ const ACMCP = (() => {
   const idOut = (X, t) => X.anon ? String(t.id).split(t.siren).join(pseudo(t.siren).replace('Client ', '')) : t.id;
   const idIn = (X, id) => { const t = X.c.taches.find((x) => x.id === id || idOut({ anon: true }, x) === id); return t ? t.id : null; };
   const catTitre = (c, k) => (c.CATS.find((x) => x.key === k) || {}).titre || k;
-  const taskOut = (X, t) => ({ id: idOut(X, t), client: X.nomOf(t.siren, t.nom), siren: X.sirenOf(t.siren), categorie: catTitre(X.c, t.cat), avis: t.lieu, a_faire: t.quoi, montant: Math.round(t.montant || 0), echeance: t.echeance || undefined, collaborateur: t.collab || undefined, statut: t.done ? 'fait' : t.snoozed ? 'reporté' : 'à faire', note: t.note || undefined, message_possible: !!ACM.mailItem(t) });
+  const taskOut = (X, t) => ({ id: idOut(X, t), client: X.nomOf(t.siren, t.nom), siren: X.sirenOf(t.siren), categorie: catTitre(X.c, t.cat), avis: t.lieu, a_faire: t.quoi, montant: Math.round(t.montant || 0), echeance: t.echeance || undefined, collaborateur: t.collab || undefined, statut: t.done ? 'fait' : t.snoozed ? 'reporté' : 'à faire', note: t.note || undefined, message_possible: !!ACM.mailItem(t), montant_par_an: t.montantLib ? true : undefined, local: t.vl ? { adresse: t.vl.adresse, commune: t.vl.ville, numero_local: t.vl.invariant, statut: t.vl.libelle, enjeu_par_an: t.vl.enjeu } : undefined });
   const unClient = (X, q) => {
     const l = X.resolve(q);
     if (!l.length) throw new Error(`Client introuvable : « ${q} ».${X.anon ? ' (Les noms sont masqués : utilisez le pseudonyme « Client XXXX ».)' : ''}`);
@@ -108,6 +108,7 @@ const ACMCP = (() => {
         dettes_fiscales: X.c.dettes.filter((r) => r.siren === s).map((r) => ({ impot: r.impot, annee: r.annee, reference: r.reference, date_limite: r.dateLimite, montant_du: r.montantDu, solde: r.solde })),
         documents_a_payer: X.c.amr.filter((r) => r.siren === s).map((r) => ({ amr: r.amr, montant: r.montant })),
         actions: X.c.taches.filter((t) => t.siren === s).map((t) => taskOut(X, t)),
+        valeur_locative: (() => { const L = ((X.data.vlResume && X.data.vlResume.locaux) || []).filter((l) => l.siren === s); return L.length ? { locaux_controles: L.length, trop_paye_probable_par_an: L.filter((l) => l.statut === 'TROP').reduce((a, l) => a + l.enjeu, 0), trop_paye_possible_par_an: L.filter((l) => l.statut === 'PISTE').reduce((a, l) => a + l.enjeu, 0), locaux: L.map((l) => ({ adresse: l.adresse, statut: l.libelle, enjeu_par_an: l.enjeu || undefined, explication: l.phrase })), detail: 'outil valeur_locative' } : undefined; })(),
         notes: (X.data.cnotes[s] || []).map((n) => `${new Date(n.at).toLocaleDateString('fr-FR')} : ${n.text}`),
       };
     },
@@ -202,6 +203,7 @@ const ACMCP = (() => {
     async valeur_locative(p = {}) {
       const X = await ctx();
       const L = await ACVL.portefeuille({ biens: X.data.biens || [], avis: X.data.avis, saisies: X.data.vl || {}, annee: X.c.annee, correspondance: X.S.correspondance || {}, cache: vlCache, erreurs: vlErreurs, cadastre: X.data.cadastre || {} });
+      try { await ACDB.put('meta', { key: 'vlResume', at: Date.now(), annee: String(X.c.annee), locaux: L.map(ACVL.resume) }); } catch {}
       let l = L;
       if (X.S.scope === 'moi') { const sc = new Set(X.c.N.map((a) => a.siren)); l = l.filter((x) => sc.has(x.siren)); }
       if (p.client) { const s = new Set(X.resolve(p.client)); l = l.filter((x) => s.has(x.siren)); }

@@ -27,8 +27,8 @@ const ACDB = (() => {
     },
     async saveSettings(patch) { const s = await api.settings(); const n = { ...s, ...patch, key: 'settings' }; await api.put('meta', n); return n; },
     async loadAll() {
-      const [avis, dossiers, dettes, tasks, settings, runs, ca, cnotes, biens, vl, cadastre] = await Promise.all([api.all('avis'), api.all('dossiers'), api.all('dettes'), api.all('tasks'), api.settings(), api.all('runs'), api.get('meta', 'ca'), api.get('meta', 'cnotes'), api.all('biens'), api.get('meta', 'vl'), api.all('cadastre')]);
-      return { avis, dossiers, dettes, tasks: Object.fromEntries(tasks.map((t) => [t.id, t])), settings, runs: runs.sort((a, b) => b.at - a.at), ca: (ca && ca.data) || {}, cnotes: (cnotes && cnotes.data) || {}, biens, vl: (vl && vl.data) || {}, cadastre: Object.fromEntries(cadastre.map((c) => [c.cle, c])) };
+      const [avis, dossiers, dettes, tasks, settings, runs, ca, cnotes, biens, vl, cadastre, vlResume] = await Promise.all([api.all('avis'), api.all('dossiers'), api.all('dettes'), api.all('tasks'), api.settings(), api.all('runs'), api.get('meta', 'ca'), api.get('meta', 'cnotes'), api.all('biens'), api.get('meta', 'vl'), api.all('cadastre'), api.get('meta', 'vlResume')]);
+      return { avis, dossiers, dettes, tasks: Object.fromEntries(tasks.map((t) => [t.id, t])), settings, runs: runs.sort((a, b) => b.at - a.at), ca: (ca && ca.data) || {}, cnotes: (cnotes && cnotes.data) || {}, biens, vl: (vl && vl.data) || {}, cadastre: Object.fromEntries(cadastre.map((c) => [c.cle, c])), vlResume: vlResume || null };
     },
     async pdfBlob(id, suite) { const p = await api.get('pdfs', id); if (!p) return null; return suite ? p.suite || null : p.blob || null; },
   };

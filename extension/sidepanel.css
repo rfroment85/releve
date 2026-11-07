@@ -13,6 +13,7 @@ main { flex: 1; padding: 4px 16px 16px; display: flex; flex-direction: column; g
 .rows { display: flex; flex-direction: column; }
 .row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-top: 1px solid var(--line2); }
 .row:first-child { border-top: 0; }
+.row.go { cursor: pointer; } .row.go:hover { background: #FCFCFA; }
 .row .grow { flex: 1; min-width: 0; }
 .row .t { font-weight: 600; font-size: 13.5px; }
 .row .s { color: var(--ink3); font-size: 12.5px; }

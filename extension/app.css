@@ -5,6 +5,7 @@
 .nav a:hover { background: rgba(22, 24, 29, .045); text-decoration: none; }
 .nav a.on { background: var(--card); color: var(--ink); box-shadow: var(--sh); border: 1px solid var(--line); padding: 7px 9px; }
 .nav a .cnt { margin-left: auto; background: var(--accent); color: #fff; border-radius: 999px; font-size: 11.5px; padding: 1px 8px; font-weight: 600; }
+.nav a .cnt.bad { background: var(--bad); }
 .nav .sp { flex: 1; }
 .nav .saved { padding: 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); margin-top: 10px; }
 .nav .saved b { font-size: 22px; display: block; line-height: 1.1; }
@@ -135,6 +136,7 @@ table.t .r, table.t th.r { text-align: right; }
 .form textarea { min-height: 90px; resize: vertical; }
 .form .inl { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .form .inl input[type=number] { width: 110px; }
+.form label.inl:has(> input[type=checkbox]) { flex-wrap: nowrap; align-items: flex-start; line-height: 1.45; } .form label.inl > input[type=checkbox] { flex: none; margin: 3px 0 0; accent-color: var(--accent); }
 
 /* Fenêtre message */
 .modal { position: fixed; inset: 0; background: rgba(22, 24, 29, .38); display: grid; place-items: center; z-index: 50; padding: 20px; }
@@ -214,6 +216,23 @@ a.vrai { font-weight: 600; color: var(--accent-d); background: var(--accent-bg);
 
 /* Mouvement */
 .nav a, .item, tr.click { transition: background-color .12s, color .12s; }
+/* Entrées en cascade : cartes de la fiche, groupes de la liste, premières lignes des tableaux (opacité et 4 px, jamais plus) */
+.page.anim .av, .page.anim .group, .page.anim .kpis > .card, .page.anim .exp { animation: ac-pagein .32s var(--ease-out) both; }
+.page .av:nth-child(2), .page .group:nth-child(2), .page .kpis > .card:nth-child(2), .page .exp:nth-child(2) { animation-delay: 50ms; }
+.page .av:nth-child(3), .page .group:nth-child(3), .page .kpis > .card:nth-child(3), .page .exp:nth-child(3) { animation-delay: 100ms; }
+.page .av:nth-child(4), .page .group:nth-child(4), .page .kpis > .card:nth-child(4), .page .exp:nth-child(4) { animation-delay: 150ms; }
+.page .av:nth-child(5), .page .exp:nth-child(5) { animation-delay: 200ms; } .page .av:nth-child(6) { animation-delay: 250ms; } .page .av:nth-child(n+7) { animation-delay: 300ms; }
+.page.anim table.t tbody tr:nth-child(-n+12) { animation: ac-pagein .28s var(--ease-out) both; }
+table.t tbody tr:nth-child(2) { animation-delay: 30ms; } table.t tbody tr:nth-child(3) { animation-delay: 60ms; } table.t tbody tr:nth-child(4) { animation-delay: 90ms; } table.t tbody tr:nth-child(5) { animation-delay: 120ms; } table.t tbody tr:nth-child(6) { animation-delay: 150ms; } table.t tbody tr:nth-child(7) { animation-delay: 180ms; } table.t tbody tr:nth-child(8) { animation-delay: 210ms; } table.t tbody tr:nth-child(n+9) { animation-delay: 240ms; }
+/* Barres qui se remplissent à l'ouverture : répartition des hausses, barres par commune, historique */
+.page.anim .stack i, .page.anim .com .mini i { transform-origin: left; animation: ac-grow .6s var(--ease-out) both; animation-delay: .15s; }
+.page.anim .hist .b i { transform-origin: bottom; animation: ac-growy .5s var(--ease-out) both; animation-delay: .1s; }
+@keyframes ac-grow { from { transform: scaleX(0); } } @keyframes ac-growy { from { transform: scaleY(0); } }
+.progress .bar > i { transition: width .6s var(--ease-out); }
+/* Clavier : repère visible au focus, discret à la souris */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.search kbd { font: 11px/1 inherit; color: var(--ink3); border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px; background: #fff; }
 .modal:not([hidden]) { animation: ac-fade .15s ease-out; }
 .modal:not([hidden]) .sheet { animation: ac-pop .18s var(--ease-out); }
 .item.checking .tick { background: var(--ok); border-color: var(--ok); color: #fff; transform: scale(1.1); }
@@ -250,7 +269,7 @@ body:has(.selbar) .toast { bottom: 84px; }
 /* Valeur locative (6.0) */
 .kpis .kpi { display: flex; flex-direction: column; gap: 2px; } .kpis .kpi b { font-size: 24px; }
 .verdict.bad { background: var(--bad-bg); color: var(--bad); } .verdict.acc { background: var(--accent-bg); color: var(--accent-d); }
-.vlhero { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; padding: 20px 22px; margin-bottom: 14px; border-left: 5px solid var(--line); animation: ac-pagein .35s ease-out both; }
+.vlhero { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; padding: 20px 22px; margin-bottom: 14px; border-left: 5px solid var(--line); } .page.anim .vlhero { animation: ac-pagein .35s ease-out both; }
 .vlhero.bad { border-left-color: var(--bad); } .vlhero.warn { border-left-color: var(--warn); } .vlhero.ok { border-left-color: var(--ok); }
 .vlhero-num { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; margin: 2px 0 6px; }
 .vlhero.bad .vlhero-num { color: var(--bad); } .vlhero.warn .vlhero-num { color: var(--warn); } .vlhero.ok .vlhero-num { color: var(--ok); }
@@ -265,15 +284,15 @@ body:has(.selbar) .toast { bottom: 84px; }
 .vltodo-n { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; font-weight: 700; background: var(--line2); color: var(--ink2); }
 .vltodo-n.bad { background: var(--bad-bg); color: var(--bad); } .vltodo-n.warn { background: var(--warn-bg); color: var(--warn); } .vltodo-n.acc { background: var(--accent-bg); color: var(--accent-d); }
 .vlfiltre { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line2); }
-.vltab tbody tr.vlrow { cursor: pointer; animation: ac-pagein .3s ease-out both; animation-delay: calc(var(--i, 0) * 35ms); } .vltab tbody tr.vlrow:hover td { background: #FAFAF7; }
+.vltab tbody tr.vlrow { cursor: pointer; } .page.anim .vltab tbody tr.vlrow { animation: ac-pagein .3s ease-out both; animation-delay: calc(var(--i, 0) * 35ms); } .vltab tbody tr.vlrow:hover td { background: #FAFAF7; }
 .vlact { display: inline-flex; align-items: center; gap: 5px; font-weight: 500; } .warnc { color: var(--warn); }
 .pill.vlst { font-weight: 600; } .pill.vlst.pulse { animation: vl-pulse 1.2s ease-out 1; }
 @keyframes vl-pulse { 0% { box-shadow: 0 0 0 0 rgba(180, 35, 24, .45); } 100% { box-shadow: 0 0 0 10px rgba(180, 35, 24, 0); } }
-.vlocal { border-top: 1px solid var(--line2); padding-top: 4px; animation: ac-pagein .35s ease-out both; animation-delay: calc(var(--i, 0) * 70ms); }
+.vlocal { border-top: 1px solid var(--line2); padding-top: 4px; } .page.anim .vlocal { animation: ac-pagein .35s ease-out both; animation-delay: calc(var(--i, 0) * 70ms); }
 .vlocal .hd { align-items: flex-start; } .vlocal .hd > div:last-child { margin-left: auto; }
 .vlverdict { font-size: 14px; line-height: 1.5; }
 .vlesc { display: flex; align-items: stretch; gap: 6px; margin-top: 12px; overflow-x: auto; padding: 2px 0 6px; }
-.vlstep { flex: 1 1 0; min-width: 150px; background: #FBFBF9; border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; animation: vl-step .4s ease-out both; animation-delay: calc(120ms + var(--i, 0) * 110ms); }
+.vlstep { flex: 1 1 0; min-width: 150px; background: #FBFBF9; border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; } .page.anim .vlstep { animation: vl-step .4s ease-out both; animation-delay: calc(120ms + var(--i, 0) * 110ms); }
 .vlstep-v { font-size: 20px; font-weight: 700; margin: 2px 0; letter-spacing: -.01em; }
 .vlstep.bad { border-color: var(--bad); background: var(--bad-bg); } .vlstep.bad .vlstep-v { color: var(--bad); }
 .vlstep.ok { border-color: var(--ok); background: var(--ok-bg); } .vlstep.ok .vlstep-v, .vlstep.okk .vlstep-v { color: var(--ok); } .vlstep.okk { border-color: var(--ok); }

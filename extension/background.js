@@ -25,6 +25,15 @@ const broadcast = () => chrome.runtime.sendMessage({ type: 'ac:state', run: RUN 
 const fromB64 = (s) => { const bin = atob(s); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; };
 const eur = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €';
 
+// Valeur locative : analyse des locaux professionnels en fin de mise à jour, résumé écrit dans meta/vlResume (lu par la liste de travail, le volet et le bandeau)
+async function recalculerVl() {
+  try {
+    const data = await ACDB.loadAll();
+    if (!(data.biens || []).length) return;
+    const L = await ACVL.portefeuille({ biens: data.biens, avis: data.avis, saisies: data.vl || {}, annee: ACA.anneeCampagne(), correspondance: (data.settings || {}).correspondance || {}, cache: _rvllp, erreurs: {}, cadastre: data.cadastre || {} });
+    await ACDB.put('meta', { key: 'vlResume', at: Date.now(), annee: String(ACA.anneeCampagne()), locaux: L.map(ACVL.resume) });
+  } catch (e) { console.warn('Valeur locative : résumé non calculé', e); }
+}
 async function refreshBadge() {
   try {
     const data = await ACDB.loadAll();
@@ -103,6 +112,7 @@ async function handle(msg, sender) {
     case 'ac:done': {
       const run = { at: Date.now(), stats: msg.stats, duree: msg.duree, annee: msg.annee, scope: msg.scope ? msg.scope.length : null, stopped: !!msg.stopped, complet: !!msg.complet, logs: RUN.logs.slice(0, 50) };
       await ACDB.put('runs', run);
+      await recalculerVl();
       const open = await refreshBadge();
       RUN = { ...RUN, running: false, done: RUN.total, eta: null, last: { ...run, open } };
       if ((msg.duree || 0) > 60) notify('fin', 'Mise à jour terminée', `${run.stats.dossiers} dossiers lus · ${open} action${open > 1 ? 's' : ''} dans votre liste de travail.`, 'a-traiter');

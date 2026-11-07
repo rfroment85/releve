@@ -152,12 +152,20 @@ const ACA = (() => {
       if (r.montant < seuilDette) continue;
       add({ id: `amr:${r.siren}|${r.amr}`, cat: 'dette', siren: r.siren, nom: r.nom, collab: r.collab, lieu: `Avis de mise en recouvrement n° ${r.amr}`, quoi: 'Document à payer dans « Payer › Dette fiscale » (pénalité, rappel ou majoration émis par le service des impôts). Le détail figure sur le site, à l’étape suivante du paiement.', montant: r.montant, echeance: 'Exigible', urgence: 9, action: 'mail-amr', amr: r });
     }
+    // Valeur locative des locaux professionnels : résumé écrit par l'application (ou le service worker en fin de mise à jour) après analyse des locaux
+    for (const l of ((data.vlResume && data.vlResume.locaux) || [])) {
+      if (!inScope(l.siren) || !(l.statut === 'TROP' || l.statut === 'PISTE')) continue;
+      const trop = l.statut === 'TROP';
+      add({ id: `vl:${l.siren}|${l.invariant}`, cat: trop ? 'tropaye' : 'ecartvl', siren: l.siren, nom: l.nom, collab: info(l.siren).collaborateur || '', lieu: `Local ${l.adresse || ''}${l.ville ? ' · ' + l.ville.replace(/\s*\(.*\)\s*$/, '') : ''}`, quoi: l.phrase, montant: l.enjeu || 0, montantLib: l.enjeu ? `≈ ${Math.round(l.enjeu).toLocaleString('fr-FR')} € par an` : '', echeance: `Réclamer avant le 31/12/${Number(l.annee || annee) + 1}`, urgence: trop ? 7 : 5, action: trop ? 'vl-reclam' : 'vl-releve', vl: l });
+    }
     T.sort((a, b) => (a.done - b.done) || (b.urgence - a.urgence) || (b.montant - a.montant));
     const CATS = [
       { key: 'paiement', titre: 'Paiement à vérifier', aide: 'échéance passée, pas de prélèvement automatique', couleur: '#B33C08' },
       { key: 'prevenir', titre: 'À prévenir avant l’échéance', aide: 'le client doit payer lui-même', couleur: '#D9480F' },
       { key: 'dette', titre: 'Créance échue', aide: 'dettes fiscales non soldées et avis de mise en recouvrement à payer', couleur: '#7A2E0E' },
       { key: 'bases', titre: 'Réclamation possible', aide: 'bases de taxe foncière en hausse, base minimum ou exonération de CFE', couleur: '#1D4ED8' },
+      { key: 'tropaye', titre: 'Trop payé probable', aide: 'valeur locative : catégorie ou surfaces du local à corriger, réclamation à préparer', couleur: '#B42318' },
+      { key: 'ecartvl', titre: 'Trop payé possible', aide: 'l’avis dépasse le recalcul au tarif officiel : relevé de propriété à demander', couleur: '#9A6200' },
       { key: 'hausse', titre: 'Hausse à expliquer', aide: 'votée par les collectivités', couleur: '#6D28D9' },
       { key: 'prelevement', titre: 'Prélèvement à proposer', aide: 'jamais prélevé ni mensualisé : une adhésion évite les relances chaque année', couleur: '#0F766E' },
       { key: 'verif', titre: 'Avis à vérifier', aide: 'écart entre le PDF et le site, exonération de création à contrôler', couleur: '#6B7280' },

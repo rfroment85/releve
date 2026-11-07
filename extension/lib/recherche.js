@@ -9,6 +9,7 @@ const ACR = (() => {
     { lib: 'Paiements à vérifier', f: { quoi: 'actions', categorie: 'paiement', tri: 'montant' } },
     { lib: 'Créances échues', f: { quoi: 'actions', categorie: 'dette', tri: 'montant' } },
     { lib: 'Réclamations possibles', f: { quoi: 'actions', categorie: 'bases', tri: 'montant' } },
+    { lib: 'Qui paie trop de taxe foncière ?', f: { quoi: 'actions', categorie: 'tropaye', tri: 'montant' } },
     { lib: 'Hausses à expliquer', f: { quoi: 'actions', categorie: 'hausse', tri: 'montant' } },
     { lib: 'Plus fortes hausses', f: { quoi: 'hausses', tri: 'euros' } },
     { lib: 'Prélèvement à proposer', f: { quoi: 'actions', categorie: 'prelevement', tri: 'montant' } },

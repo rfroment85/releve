@@ -311,7 +311,16 @@ const ACVL = (() => {
     if (v.code === 'GRIS') return mk('MANQUE');
     return mk(a.ecart > 0.05 ? 'FAVORABLE' : 'OK');
   }
-  return { STATUTS, statut, CATEGORIES, COURT, nomCat, POND, LIB_SURF, DEPARTEMENTS, VERDICTS, portefeuille, categorieCode, depCode, communeCode, normNom, surfacePonderee, charger, normDep, secteur, coefLoc, tarif, neut, evaluer, vl70DepuisAvis, cotisationPour, signaux, analyser, verdict };
+  // Résumé compact d'un local analysé, écrit dans meta/vlResume : c'est lui que lit la liste de travail (ACA.campagne), sans refaire le calcul
+  const k = (n) => Math.round(n || 0).toLocaleString('fr-FR');
+  function resume(l) {
+    const st = statut(l), a = l.analyse || {}, ref = a.ref, g = a.groupe, calc = a.calcul;
+    let phrase = st.phrase;
+    if (st.k === 'TROP') { const sim = st.signal && st.signal.simulation; phrase = `${st.signal ? st.signal.titre : 'Base de l’avis supérieure au recalcul'} : environ ${k(st.enjeu)} € de trop par an${ref && sim ? ` (base ${k(ref.base)} € sur l’avis, ${k(sim.baseGroupe || sim.base)} € une fois corrigée)` : ''}.`; }
+    else if (st.k === 'PISTE') phrase = `L’avis (base ${k(ref.base)} €) dépasse de ${Math.abs(Math.round(a.ecart * 100))} % le recalcul au tarif officiel (${k(g ? g.base : calc.base)} €)${g ? ` pour les ${g.nb} locaux de l’adresse` : ''} : environ ${k(st.enjeu)} € par an à creuser. Le relevé de propriété dira d’où vient l’écart.`;
+    return { siren: l.siren, nom: l.nom, invariant: l.invariant, adresse: l.adresse, ville: l.ville, categorie: l.categorie, statut: st.k, libelle: st.lib, enjeu: st.enjeu ? Math.round(st.enjeu) : 0, certitude: st.certitude, annee: ref ? ref.annee : null, phrase };
+  }
+  return { STATUTS, statut, resume, CATEGORIES, COURT, nomCat, POND, LIB_SURF, DEPARTEMENTS, VERDICTS, portefeuille, categorieCode, depCode, communeCode, normNom, surfacePonderee, charger, normDep, secteur, coefLoc, tarif, neut, evaluer, vl70DepuisAvis, cotisationPour, signaux, analyser, verdict };
 })();
 if (typeof self !== 'undefined') self.ACVL = ACVL;
 if (typeof module !== 'undefined') module.exports = ACVL;
