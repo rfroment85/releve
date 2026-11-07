@@ -168,7 +168,7 @@ const ACVL = (() => {
       const e = evaluer(data, { commune: local.commune, section: local.section, parcelle: local.parcelle, prefixe: local.prefixe, locaux: [l2], annee: anRef, vl70 });
       if (e.erreur) return { ...sg, simulation: null };
       const cot = ref && ref.base ? cotisationPour(e.base, ref.base, cotRef) : null;
-      return { ...sg, simulation: { base: e.base, cotisation: cot, gain: cot !== null && cotRef ? cotRef - cot : null, hypothese: l2 } };
+      return { ...sg, simulation: { base: e.base, neutralisee: e.neutralisee, cotisation: cot, gain: cot !== null && cotRef ? cotRef - cot : null, hypothese: l2 } };
     });
     // Hypothèse de l'utilisateur (catégorie ou surfaces saisies différentes de la fiche) : son effet est chiffré comme un signal, avec le gain correspondant
     const surfDiff = Object.keys(POND).some((k) => (Number((local.surfaces || {})[k]) || 0) !== (Number((local.surfacesDeclarees || {})[k]) || 0));
@@ -233,8 +233,39 @@ const ACVL = (() => {
         if (!analyse.erreur && partage && (eN || eN1)) { const e = eN || eN1; analyse.partage = { base: e.base, annee: e.annee, nb: parAdresse[cleA + '|' + villeN] }; if (analyse.verdict.code === 'GRIS') analyse.verdict = { code: 'ORANGE', texte: `Adresse partagée par ${analyse.partage.nb} biens : la base de l’avis (${fmtK(e.base)} €) ne peut pas être isolée local par local` }; }
         if (local.exclu) analyse.verdict = { code: 'EXCLU', texte: 'Écarté par vous' + (local.note ? ' : ' + local.note : '') };
         const gain = !analyse.erreur ? Math.max(0, ...analyse.signaux.map((x) => (x.simulation && x.simulation.gain) || 0)) : 0;
-        out.push({ ...local, bien: b, analyse, gain, avisN: mkAvis(eN), avisN1: mkAvis(eN1), sp: surfacePonderee(local.surfaces) });
+        out.push({ ...local, bien: b, analyse, gain, avisN: mkAvis(eN), avisN1: mkAvis(eN1), sp: surfacePonderee(local.surfaces), _grp: partage ? cleA + '|' + villeN : null, _eN: eN, _eN1: eN1 });
       }
+      // Adresses partagées : l'avis ne donne qu'une base pour tous les locaux de l'adresse. On compare donc la somme des valeurs
+      // calculées (planchonnée avec l'ancienne valeur locative reconstituée depuis cette ligne) à la base de l'avis, et les gains
+      // des signaux se chiffrent sur le groupe.
+      const groupes = {};
+      for (const l of out) if (l.siren === rec.siren && l._grp) (groupes[l._grp] = groupes[l._grp] || []).push(l);
+      for (const G of Object.values(groupes)) {
+        const ok = G.filter((l) => l.analyse && l.analyse.calcul && !l.exclu);
+        const e = G[0]._eN || G[0]._eN1; if (!e || !ok.length) continue;
+        const ref = { annee: e.annee, base: e.base, cotisation: e.cotisation, cotisationLissee: e.cotisationLissee, cotisationTotale: e.total || null, partage: true, avisId: e.avisId, adresse: e.adresse };
+        const mk = (x) => ({ annee: x.annee, base: x.base, cotisation: x.cotisation, cotisationLissee: x.cotisationLissee });
+        const recon = (G[0]._eN1 && vl70DepuisAvis(mk(G[0]._eN1))) || vl70DepuisAvis(ref) || null, vl70 = recon && recon.planchonnement ? recon.vl70 : null;
+        const neutSum = ok.reduce((a, l) => a + l.analyse.calcul.neutralisee, 0);
+        const baseDe = (n) => (vl70 ? 0.5 * (n + vl70) : n) / 2;
+        const baseG = baseDe(neutSum), ecart = ref.base ? (baseG - ref.base) / ref.base : null, cotRef = ref.cotisationTotale || ref.cotisation;
+        for (const l of G) {
+          const an = l.analyse; if (!an || !an.calcul) continue;
+          an.groupe = { nb: G.length, calcules: ok.length, neutralisee: neutSum, vl70, planchonnee: vl70 ? 0.5 * (neutSum + vl70) : neutSum, base: baseG, ecart, ref, reconstitution: recon, part: neutSum ? an.calcul.neutralisee / neutSum : 0 };
+          an.ref = ref; an.ecart = ecart; an.reconstitution = recon;
+          for (const sg of an.signaux) if (sg.simulation && sg.simulation.neutralisee !== undefined) {
+            const bh = baseDe(neutSum - an.calcul.neutralisee + sg.simulation.neutralisee), cot = cotisationPour(bh, ref.base, cotRef);
+            sg.simulation.baseGroupe = bh; sg.simulation.cotisation = cot; sg.simulation.gain = cot !== null && cotRef ? cotRef - cot : null;
+          }
+          if (l.exclu) continue;
+          const v = verdict(ecart, an.signaux, recon, ref);
+          if (v.code === 'VERT') v.texte = `Base de l’avis reproduite au tarif pour les ${G.length} locaux de cette adresse (écart ${(ecart * 100).toFixed(1).replace('.', ',')} %) : pas d’erreur de calcul d’ensemble` + (vl70 ? ' ; le planchonnement explique l’écart avec le tarif brut' : '');
+          else if (v.code === 'ORANGE' && ecart !== null && Math.abs(ecart) > 0.05 && !an.signaux.some((x) => x.gravite >= 2)) v.texte = `Pour les ${G.length} locaux de cette adresse, la base calculée (${Math.round(baseG).toLocaleString('fr-FR')} €) s’écarte de ${(ecart * 100).toFixed(0)} % de la base de l’avis (${Math.round(ref.base).toLocaleString('fr-FR')} €)` + (ok.length < G.length ? ` ; ${G.length - ok.length} local${G.length - ok.length > 1 ? 'aux' : ''} non calculé${G.length - ok.length > 1 ? 's' : ''}` : '') + (vl70 ? '' : ' ; sans ligne de lissage sur l’avis, le planchonnement n’a pas pu être reconstitué');
+          an.verdict = v;
+          l.gain = Math.max(0, ...an.signaux.map((x) => (x.simulation && x.simulation.gain) || 0));
+        }
+      }
+      for (const l of out) { delete l._grp; delete l._eN; delete l._eN1; }
     }
     const ordre = { ROUGE: 0, ORANGE: 1, GRIS: 2, VERT: 3, HORS: 4, EXCLU: 5 };
     out.sort((x, y) => (ordre[(x.analyse.verdict || {}).code] ?? 2) - (ordre[(y.analyse.verdict || {}).code] ?? 2) || y.gain - x.gain || (y.avisN ? y.avisN.base : 0) - (x.avisN ? x.avisN.base : 0));
