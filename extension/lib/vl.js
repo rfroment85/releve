@@ -30,14 +30,17 @@ const ACVL = (() => {
     [/cliniques?|hospital/i, 'CLI1'], [/centres? m[ée]dicaux|maisons? de retraite/i, 'CLI2'], [/soins/i, 'CLI3'], [/r[ée][ée]ducation|m[ée]dicalis/i, 'CLI4'],
     [/carri[èe]res?/i, 'IND2'], [/industriels?/i, 'IND1'], [/exceptionnel|aucune/i, 'EXC1'],
   ];
-  const categorieCode = (lib) => { const t = String(lib || ''); if (/^[A-Z]{3}\d$/.test(t)) return t; for (const [re, c] of LIBELLES) if (re.test(t)) return c; return ''; };
+  const categorieCode = (lib) => { const t = String(lib || ''); if (/^[A-Z]{3}\d$/.test(t)) return t; if ((/m[ée]thode comptable/i.test(t) && !/pas|non /i.test(t)) || /appr[ée]ciation directe/i.test(t)) return 'HORS'; for (const [re, c] of LIBELLES) if (re.test(t)) return c; return ''; };
   const DEPARTEMENTS = { '01': 'AIN', '02': 'AISNE', '03': 'ALLIER', '04': 'ALPES-DE-HAUTE-PROVENCE', '05': 'HAUTES-ALPES', '06': 'ALPES-MARITIMES', '07': 'ARDECHE', '08': 'ARDENNES', '09': 'ARIEGE', '10': 'AUBE', '11': 'AUDE', '12': 'AVEYRON', '13': 'BOUCHES-DU-RHONE', '14': 'CALVADOS', '15': 'CANTAL', '16': 'CHARENTE', '17': 'CHARENTE-MARITIME', '18': 'CHER', '19': 'CORREZE', '2A': 'CORSE-DU-SUD', '2B': 'HAUTE-CORSE', '21': 'COTE-D\'OR', '22': 'COTES-D\'ARMOR', '23': 'CREUSE', '24': 'DORDOGNE', '25': 'DOUBS', '26': 'DROME', '27': 'EURE', '28': 'EURE-ET-LOIR', '29': 'FINISTERE', '30': 'GARD', '31': 'HAUTE-GARONNE', '32': 'GERS', '33': 'GIRONDE', '34': 'HERAULT', '35': 'ILLE-ET-VILAINE', '36': 'INDRE', '37': 'INDRE-ET-LOIRE', '38': 'ISERE', '39': 'JURA', '40': 'LANDES', '41': 'LOIR-ET-CHER', '42': 'LOIRE', '43': 'HAUTE-LOIRE', '44': 'LOIRE-ATLANTIQUE', '45': 'LOIRET', '46': 'LOT', '47': 'LOT-ET-GARONNE', '48': 'LOZERE', '49': 'MAINE-ET-LOIRE', '50': 'MANCHE', '51': 'MARNE', '52': 'HAUTE-MARNE', '53': 'MAYENNE', '54': 'MEURTHE-ET-MOSELLE', '55': 'MEUSE', '56': 'MORBIHAN', '57': 'MOSELLE', '58': 'NIEVRE', '59': 'NORD', '60': 'OISE', '61': 'ORNE', '62': 'PAS-DE-CALAIS', '63': 'PUY-DE-DOME', '64': 'PYRENEES-ATLANTIQUES', '65': 'HAUTES-PYRENEES', '66': 'PYRENEES-ORIENTALES', '67': 'BAS-RHIN', '68': 'HAUT-RHIN', '69': 'RHONE', '70': 'HAUTE-SAONE', '71': 'SAONE-ET-LOIRE', '72': 'SARTHE', '73': 'SAVOIE', '74': 'HAUTE-SAVOIE', '75': 'PARIS', '76': 'SEINE-MARITIME', '77': 'SEINE-ET-MARNE', '78': 'YVELINES', '79': 'DEUX-SEVRES', '80': 'SOMME', '81': 'TARN', '82': 'TARN-ET-GARONNE', '83': 'VAR', '84': 'VAUCLUSE', '85': 'VENDEE', '86': 'VIENNE', '87': 'HAUTE-VIENNE', '88': 'VOSGES', '89': 'YONNE', '90': 'TERRITOIRE DE BELFORT', '91': 'ESSONNE', '92': 'HAUTS-DE-SEINE', '93': 'SEINE-SAINT-DENIS', '94': 'VAL-DE-MARNE', '95': 'VAL-D\'OISE', '971': 'GUADELOUPE', '972': 'MARTINIQUE', '973': 'GUYANE', '974': 'LA REUNION', '976': 'MAYOTTE' };
   const normNom = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\bSAINT\b/g, 'ST').replace(/\bSAINTE\b/g, 'STE').replace(/[^A-Z0-9]+/g, ' ').trim();
   const depCode = (nom) => { const n = normNom(nom); for (const [c, l] of Object.entries(DEPARTEMENTS)) if (normNom(l) === n) return c; return ''; };
   // Code INSEE (3 chiffres) d'une commune à partir de son nom, dans les données du département
   function communeCode(data, nom) {
-    const n = normNom(String(nom || '').replace(/\s*\(.*\)\s*$/, ''));
+    // Arrondissements (Paris, Lyon, Marseille) : « LYON 03 », « LYON 3EME », « LYON 3E ARRONDISSEMENT » → « LYON 3 »
+    const arr = (x) => x.replace(/\b0*(\d{1,2})\s*(?:ER|EME|E)?\b(?:\s*ARRONDISSEMENT)?/, ' $1').replace(/\s+/g, ' ').trim();
+    const n = normNom(String(nom || '').replace(/\s*\(.*\)\s*$/, '')), na = arr(n);
     for (const [c, e] of Object.entries(data.secteurs)) if (normNom(e.n) === n) return c;
+    for (const [c, e] of Object.entries(data.secteurs)) if (arr(normNom(e.n)) === na) return c;
     for (const [c, e] of Object.entries(data.secteurs)) if (normNom(e.n).replace(/\s/g, '') === n.replace(/\s/g, '')) return c;
     return '';
   }
@@ -158,13 +161,22 @@ const ACVL = (() => {
       const cot = ref && ref.base ? cotisationPour(e.base, ref.base, cotRef) : null;
       return { ...sg, simulation: { base: e.base, cotisation: cot, gain: cot !== null && cotRef ? cotRef - cot : null, hypothese: l2 } };
     });
-    return { annee: anRef, calcul: base, reconstitution: rec, ecart, ref, signaux: sims, verdict: verdict(ecart, sims, rec, ref) };
+    // Hypothèse de l'utilisateur (catégorie ou surfaces saisies différentes de la fiche) : son effet est chiffré comme un signal, avec le gain correspondant
+    const surfDiff = Object.keys(POND).some((k) => (Number((local.surfaces || {})[k]) || 0) !== (Number((local.surfacesDeclarees || {})[k]) || 0));
+    const modif = (local.categorieDeclaree && local.categorie !== local.categorieDeclaree) || (local.surfacesDeclarees && surfDiff);
+    if (modif && ref && ref.base) {
+      const cot = cotisationPour(base.base, ref.base, cotRef), g = cotRef && cot !== null ? cotRef - cot : null;
+      const quoi = [local.categorie !== local.categorieDeclaree ? `catégorie ${local.categorie} au lieu de ${local.categorieDeclaree}` : '', surfDiff ? 'surfaces corrigées' : ''].filter(Boolean).join(', ');
+      sims.unshift({ code: 'SAISIE', gravite: g > 100 ? 3 : 1, titre: `Avec votre hypothèse (${quoi})`, texte: `Base recalculée ${Math.round(base.base).toLocaleString('fr-FR')} € contre ${Math.round(ref.base).toLocaleString('fr-FR')} € sur l’avis ${ref.annee}.`, simulation: { base: base.base, cotisation: cot, gain: g, hypothese: { categorie: local.categorie, surfaces: local.surfaces } }, question: 'À étayer par des pièces (plan, bail, photos) avant réclamation.' });
+    }
+    return { annee: anRef, calcul: base, reconstitution: rec, ecart, ref, signaux: sims, verdict: verdict(ecart, sims, rec, ref), hypothese: !!modif };
   }
   // Verdict : ROUGE = signal grave chiffré avec gain ; ORANGE = signal à vérifier ou écart inexpliqué ; VERT = base reproduite et aucun signal
+  const minu = (t) => t.replace(/^(\S+)/, (m) => (/^[A-Z]{3}\d$/.test(m) ? m : m.toLowerCase()));
   function verdict(ecart, sims, rec, ref) {
     const gain = sims.filter((s) => s.simulation && s.simulation.gain > 100);
-    if (gain.length) return { code: 'ROUGE', texte: `Anomalie probable : ${gain[0].titre.toLowerCase()} — gain estimé ${Math.round(gain[0].simulation.gain).toLocaleString('fr-FR')} € par an` };
-    if (sims.some((s) => s.gravite >= 2)) return { code: 'ORANGE', texte: 'À vérifier avec le client : ' + sims.find((s) => s.gravite >= 2).titre.toLowerCase() };
+    if (gain.length) return { code: 'ROUGE', texte: `Anomalie probable : ${minu(gain[0].titre)} — gain estimé ${Math.round(gain[0].simulation.gain).toLocaleString('fr-FR')} € par an` };
+    if (sims.some((s) => s.gravite >= 2)) return { code: 'ORANGE', texte: 'À vérifier avec le client : ' + minu(sims.find((s) => s.gravite >= 2).titre) };
     if (ecart !== null && Math.abs(ecart) > 0.05) return { code: 'ORANGE', texte: `La base calculée s’écarte de ${(ecart * 100).toFixed(0)} % de l’avis${ref && ref.partage ? ' (adresse partagée avec d’autres biens : la base de l’avis les inclut)' : rec && !rec.planchonnement ? ' (pas de trace de planchonnement : local récent ou avis sans lissage)' : ''} : surfaces ou catégorie à confirmer` };
     if (ecart !== null) return { code: 'VERT', texte: 'Base de l’avis reproduite au tarif de la grille (écart ' + (ecart * 100).toFixed(1).replace('.', ',') + ' %) : pas d’erreur de calcul' + (rec && rec.planchonnement ? ' ; le planchonnement explique l’écart avec le tarif brut' : '') };
     return { code: 'GRIS', texte: 'Pas d’avis rapproché : calcul au tarif seul' };
@@ -205,7 +217,8 @@ const ACVL = (() => {
           exclu: !!saisie.exclu, note: saisie.note || '', code: info.code || '', collab: info.collaborateur || '',
         };
         let analyse;
-        if (!data) analyse = { erreur: dep ? (erreurs[dep] || `Département ${dep} : paramètres non chargés`) : 'Département non reconnu', signaux: signaux(local) };
+        if (local.categorie === 'HORS') analyse = { verdict: { code: 'HORS', texte: 'Local évalué selon la méthode comptable ou par appréciation directe (art. 1499 et 1498 3° CGI) : la grille tarifaire ne s’applique pas.' }, signaux: [] };
+        else if (!data) analyse = { erreur: dep ? (erreurs[dep] || `Département ${dep} : paramètres non chargés`) : 'Département non reconnu', signaux: signaux(local) };
         else if (!local.commune || !local.section) analyse = { erreur: !local.commune ? `Commune « ${b.ville} » introuvable dans les secteurs d’évaluation` : 'Références cadastrales non lues', signaux: signaux(local) };
         else analyse = analyser(data, local, { avis: partage ? null : mkAvis(eN), avisN1: partage ? null : mkAvis(eN1), annee: eN ? an : (eN1 ? anN1 : an) });
         if (!analyse.erreur && partage && (eN || eN1)) { const e = eN || eN1; analyse.partage = { base: e.base, annee: e.annee, nb: parAdresse[cleA + '|' + villeN] }; if (analyse.verdict.code === 'GRIS') analyse.verdict = { code: 'ORANGE', texte: `Adresse partagée par ${analyse.partage.nb} biens : la base de l’avis (${fmtK(e.base)} €) ne peut pas être isolée local par local` }; }
@@ -214,12 +227,12 @@ const ACVL = (() => {
         out.push({ ...local, bien: b, analyse, gain, avisN: mkAvis(eN), avisN1: mkAvis(eN1), sp: surfacePonderee(local.surfaces) });
       }
     }
-    const ordre = { ROUGE: 0, ORANGE: 1, GRIS: 2, VERT: 3, EXCLU: 4 };
+    const ordre = { ROUGE: 0, ORANGE: 1, GRIS: 2, VERT: 3, HORS: 4, EXCLU: 5 };
     out.sort((x, y) => (ordre[(x.analyse.verdict || {}).code] ?? 2) - (ordre[(y.analyse.verdict || {}).code] ?? 2) || y.gain - x.gain || (y.avisN ? y.avisN.base : 0) - (x.avisN ? x.avisN.base : 0));
     void num;
     return out;
   }
-  const VERDICTS = { ROUGE: 'Anomalie probable', ORANGE: 'À vérifier', VERT: 'Conforme', GRIS: 'Sans avis rapproché', EXCLU: 'Écarté' };
+  const VERDICTS = { ROUGE: 'Anomalie probable', ORANGE: 'À vérifier', VERT: 'Conforme', GRIS: 'Sans avis rapproché', EXCLU: 'Écarté', HORS: 'Hors champ', ERREUR: 'Non calculé' };
   return { CATEGORIES, POND, LIB_SURF, DEPARTEMENTS, VERDICTS, portefeuille, categorieCode, depCode, communeCode, normNom, surfacePonderee, charger, normDep, secteur, coefLoc, tarif, neut, evaluer, vl70DepuisAvis, cotisationPour, signaux, analyser, verdict };
 })();
 if (typeof self !== 'undefined') self.ACVL = ACVL;

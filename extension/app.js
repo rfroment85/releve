@@ -336,8 +336,16 @@ function lignesTable(a) {
 function pageClient(arg) {
   const siren = String(arg).split('/')[0];
   const all = A.data.avis.filter((a) => a.siren === siren);
-  if (!all.length) return `<a class="back" href="#clients">${IC.arrowL} Clients</a><div class="card empty">Client introuvable sur ce poste.</div>`;
   const info = (A.S.correspondance || {})[siren] || {};
+  if (!all.length) {
+    // Dossier sans avis sur le poste mais dont les biens immobiliers ont été lus : on affiche au moins le contrôle de la valeur locative
+    const d = (A.data.dossiers || []).find((x) => x.siren === siren), b = (A.data.biens || []).find((x) => x.siren === siren);
+    if (!d && !b) return `<a class="back" href="#clients">${IC.arrowL} Clients</a><div class="card empty">Client introuvable sur ce poste.</div>`;
+    return `<a class="back" href="#valeur-locative">${IC.arrowL} Valeur locative</a>
+    <div class="ph"><div><h1>${esc((b && b.nom) || (d && d.nom) || siren)}</h1><div class="sub">SIREN ${fmtSiren(siren)}${info.code ? ` · Dossier ${esc(info.code)}` : ''}${info.collaborateur ? ` · Suivi par ${esc(info.collaborateur)}` : ''}</div></div></div>
+    <div class="card empty" style="margin-bottom:14px">Aucun avis de ce dossier sur ce poste (pas encore d’avis de taxe foncière, ou dossier hors périmètre de la dernière mise à jour).</div>
+    ${vlClientBlock(siren)}`;
+  }
   const nom = all[0].nom;
   const N = A.c.N.filter((a) => a.siren === siren).sort((a, b) => (a.taxe > b.taxe ? -1 : 1) || b.m - a.m);
   const tasks = A.c.taches.filter((t) => t.siren === siren);
