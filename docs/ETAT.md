@@ -1,4 +1,4 @@
-# Relève — description détaillée (version 5.2.2)
+# Relève — description détaillée (version 6.0.0)
 
 Anciennement « Avis Collector ». Extension Chrome / Edge qui lit dans l'espace professionnel impots.gouv les avis de **taxe foncière** et de **CFE** de tous les clients du cabinet (N et N-1), les analyse sur le poste et en tire une **liste de travail triée par urgence**.
 
@@ -73,6 +73,16 @@ Anciennement « Avis Collector ». Extension Chrome / Edge qui lit dans l'espace
 ### Messages et réclamations
 - **Brouillons de mail .eml** : un par client, regroupant tous ses points, avec les avis joints, en version courte ou détaillée. L'utilisateur relit et envoie lui-même depuis Outlook.
 - **Brouillons de réclamation chiffrés** (bases TF, base minimum CFE, création) : l'utilisateur les relit, les complète et les dépose lui-même par la messagerie sécurisée.
+
+### Valeur locative des locaux professionnels (depuis 6.0)
+- **Lecture** : à la mise à jour, pour chaque dossier, « Gérer mes biens immobiliers » (`redirection.do?idth=demarches.gmbi.biensimmo`, application Spring Web Flow `gmbi-mapi`) : la page d'accueil liste tous les biens (`.carte-bien`), chaque carte porte un formulaire `_eventId_jeconsulteunbien` ; la fiche « Consulter un bien » (`dl.dl-recapitulatif`) donne numéro fiscal, adresse, parcelle, catégorie, surfaces P1 / P2 couvertes / P2 non couvertes / parkings, droit. Les instantanés de flux acceptent plusieurs consultations depuis la même page (≈ 0,1 s par fiche). Les « démarches attendues » (DP, PC) sont des cartes sans type. Biens relus tous les 30 jours (ou « Tout relire ») ; réglage pour désactiver. Dossier sans le service : `indispo`.
+- **Avis** : `lib/avistf.js` extrait de l'avis de TF le détail par adresse (base, cotisation, cotisation lissée de la part communale ; feuillets annexes pour les avis multi-adresses). Les avis déjà sur le poste sont relus une fois à l'ouverture de la page Valeur locative (`vlMigrer`, marqueur `infos.vlRelu`).
+- **Calcul** (`lib/vl.js`) : surface pondérée (1 / 0,5 / 0,2 / 0,5 / 0,2) × tarif (catégorie, secteur de la section cadastrale) × coefficient de localisation = VL brute ; × coefficient de neutralisation de la commune ; planchonnement pour les locaux existant au 1/1/2017 : moyenne avec l'ancienne VL, reconstituée depuis l'avis : (cotisation lissée − cotisation) = (2026 − année)/10 × écart initial ; VL 1970 = 2 × base × (cotisation + écart) / cotisation. Base = VL / 2. Validation : bases d'avis retrouvées à ±0,6 % sur 6 locaux (Var, Isère, Alpes-de-Haute-Provence).
+- **Données** (`data/rvllp/<dép>.json`, 6,6 Mo, 101 départements) : générées depuis les fichiers publiés sur impots.gouv.fr/portail/node/11406 (`secteur-XX.ods`, `tarif/2025|2026/tarif-XX.xlsx`, `coef-loc/2024|2026/coef-loc-XX.ods`, `coef-neut-ap21/coef-neut-ap21-XX.ods` ; Corse = 20a / 20b). Mise à jour annuelle : retélécharger tarifs N+1 et coefficients, régénérer les JSON (script de génération conservé par l'auteur), relivrer. Chargés à la demande depuis l'extension (aucun réseau).
+- **Signaux** : MAG1/MAG3 ≥ 400 m² (→ MAG4/5), catégorie incompatible avec le NAF de l'occupant saisi, hôtel ≤ 1 étoile en HOT1/2 (→ HOT3), P1 > emprise × niveaux, DEP1 ≥ 3 000 m² tout en P1, grand local sans surface secondaire, déclaration attendue. Chaque hypothèse chiffrée est recalculée avec planchonnement ; gain = cotisation réelle × (1 − base hypothèse / base avis).
+- **Verdicts** : ROUGE (gain > 100 €), ORANGE (signal à vérifier, écart > 5 %, adresse partagée), VERT (base reproduite, aucun signal), GRIS (pas d'avis rapproché), EXCLU (écarté par l'utilisateur). Saisies (catégorie, surfaces, occupant, étoiles, note, exclu) dans `meta/vl`, clé `siren|invariant`.
+- **Interface** : menu « Valeur locative » (tableau trié, compteurs, dossiers sans accès), bloc dans la fiche client (surfaces, chaîne de calcul, points à vérifier, simulateur), export Excel, outil Claude `valeur_locative` (connecteur 1.2.0).
+- **Hors champ** : locaux industriels (méthode comptable), évaluation par appréciation directe, habitation.
 
 ### Habilitations et clients à raccorder (depuis 5.2)
 - **Habilitations** : lecture à la demande de « Gérer mon espace › Consulter mes services » (une page qui liste tous les couples SIREN × service du compte connecté, puis la même page filtrée par rôle et par état, bouton « Filtrer » uniquement). Environ 30 s pour un millier de dossiers. Vue par dossier, décompte par service (avec / sans), liste des dossiers **sans** un service (jamais attribué, supprimé, en veille), export de la sélection et matrice dossiers × services.
@@ -186,6 +196,8 @@ Anciennement « Avis Collector ». Extension Chrome / Edge qui lit dans l'espace
 | 4.6 | Animations discrètes, réglage « réduire les animations » respecté, correction du premier clic perdu |
 | 5.0 / 5.0.1 | Renommage en **Relève**, nouveau site releveavis.netlify.app |
 | 5.1 | **Sauvegarde et restauration** |
+| 5.2 → 5.2.4 | Habilitations, clients à raccorder, espace mono-dossier |
+| 6.0 | **Valeur locative des locaux professionnels** : lecture GMBI, calcul au tarif, planchonnement reconstitué, signaux, simulation, outil Claude |
 
 ---
 
@@ -203,6 +215,7 @@ Mesures prises :
 ## 9. Pistes
 
 - Contrôle de tranche de base minimum CFE sous le plafond : nécessite les délibérations communales (fichier REI).
+- Valeur locative : occupant automatique (API SIRENE, appel réseau à proposer en option), emprise du bâti (cadastre Etalab), classement hôtelier (open data Atout France), brouillon de réclamation « catégorie / surfaces », exonérations temporaires.
 - « Qui d'autre a accès » à un dossier (droits d'accès par service), consultable dossier par dossier.
 - Mode « espace d'un client » : lecture ponctuelle de l'espace d'une entreprise ouvert par l'utilisateur lui-même (sans jamais gérer ses identifiants).
 - Import direct des exports des principaux logiciels comptables (fichier des dossiers, chiffres d'affaires).

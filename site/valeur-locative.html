@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Valeur locative des locaux professionnels · Relève</title>
+<meta name="description" content="Comment Relève 6 contrôle le calcul de la taxe foncière des locaux professionnels : fiches « Gérer mes biens immobiliers », grille tarifaire départementale, planchonnement reconstitué, signaux d’alerte et simulation.">
+<link rel="icon" href="img/icon.png">
+<link rel="stylesheet" href="site.css">
+<style>
+  .chain { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin: 14px 0 }
+  .chain table { width: 100%; border-collapse: collapse; font-size: 15px }
+  .chain td { padding: 7px 8px; border-bottom: 1px solid var(--line2); vertical-align: top }
+  .chain td.r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums }
+  .chain tr:last-child td { border-bottom: 0; font-weight: 600 }
+  .formule { font-family: ui-monospace, Consolas, monospace; background: var(--line2); border-radius: 8px; padding: 10px 14px; font-size: 14.5px; overflow-x: auto }
+  .vd { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13.5px; font-weight: 600 }
+  .vd.r { background: #FDECEA; color: #B42318 } .vd.o { background: var(--warn-bg); color: #9A6200 } .vd.v { background: var(--ok-bg); color: var(--ok) } .vd.g { background: var(--line2); color: var(--ink2) }
+  .warnbox { background: var(--warn-bg); border-radius: 12px; padding: 16px 18px; margin: 18px 0; font-size: 15px }
+  .part p { color: var(--ink2) }
+  .part li { color: var(--ink2); margin-bottom: 6px }
+</style>
+</head>
+<body>
+<div class="wrap narrow">
+  <header class="top">
+    <a class="brand" href="./"><span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z"/><path d="M10 13l2 2 4-4"/></svg></span>Relève</a>
+    <nav><a href="mode-emploi.html">Mode d’emploi</a><a href="valeur-locative.html" class="on">Valeur locative</a><a href="confidentialite.html">Confidentialité</a></nav>
+  </header>
+
+  <h1 style="font-size:34px">Contrôler le calcul de la taxe foncière des locaux professionnels</h1>
+  <p class="lead" style="font-size:17px">Nouveau dans Relève 6 : pour chaque local professionnel de vos clients, Relève refait le calcul de l’administration à partir de ce qui est déclaré, le compare à l’avis et vous dit où regarder. Voici la démarche, étape par étape, et ses limites.</p>
+
+  <div class="toc"><a href="#pourquoi">Pourquoi</a><a href="#lecture">1. Ce que Relève lit</a><a href="#calcul">2. Le calcul</a><a href="#planchonnement">3. Le planchonnement</a><a href="#signaux">4. Les signaux</a><a href="#verdict">5. Le verdict</a><a href="#faire">6. Ce qu’il vous reste à faire</a><a href="#limites">Limites</a><a href="#sources">Sources</a></div>
+
+  <div class="part" id="pourquoi">
+    <div class="h"><h2>Pourquoi ce contrôle</h2></div>
+    <p>Depuis 2017, la valeur locative d’un local professionnel n’est plus une estimation : c’est une formule, appliquée mécaniquement à ce que le propriétaire (ou l’administration) a déclaré en 2013 et depuis. L’administration se trompe rarement dans le calcul. Les erreurs sont dans les <b>données déclarées</b> : une surface de parking comptée comme surface de vente, une réserve comptée comme un magasin, un atelier classé en boutique, une boutique de 900 m² restée dans la catégorie des « moins de 400 m² », un hôtel une étoile évalué comme un trois étoiles. Ces écarts se paient chaque année, et ils se corrigent : la taxe des deux dernières années se réclame de droit, les années antérieures peuvent être dégrevées d’office.</p>
+    <p>Jusqu’ici, vérifier un local demandait de retrouver la grille tarifaire du département, le secteur de la parcelle, le coefficient de localisation, le coefficient de neutralisation de la commune, puis de comprendre le planchonnement. Relève fait tout cela sur votre poste, pour tous les locaux de tous vos clients, en une mise à jour.</p>
+  </div>
+
+  <div class="part" id="lecture">
+    <div class="h"><h2>1. Ce que Relève lit</h2><span class="t">pendant la mise à jour, en lecture seule</span></div>
+    <ul>
+      <li><b>La fiche de chaque local professionnel</b> dans « Gérer mes biens immobiliers » de l’espace professionnel (service à déléguer au cabinet par le client) : numéro fiscal du local, adresse, références cadastrales de la parcelle, catégorie, surface des parties principales, surfaces secondaires couvertes et non couvertes, parkings couverts et non couverts, droit (propriétaire, bailleur ou preneur d’un bail à construction…). Les biens d’habitation sont comptés mais pas contrôlés : la révision ne les concerne pas.</li>
+      <li><b>Les déclarations attendues</b> par l’administration (permis de construire, déclaration préalable non suivis d’une déclaration foncière), qui apparaissent dans la même page.</li>
+      <li><b>Le détail par adresse de l’avis de taxe foncière</b> : base, cotisation et cotisation lissée de la part communale. Les avis déjà présents sur votre poste sont relus une fois pour en extraire ce détail.</li>
+    </ul>
+    <p>Rien n’est saisi, rien n’est déclaré : Relève n’ouvre que la liste des biens et la page « Consulter un bien ». Comme pour le reste, vos données restent dans votre navigateur.</p>
+  </div>
+
+  <div class="part" id="calcul">
+    <div class="h"><h2>2. Le calcul, tel que le fait l’administration</h2><span class="t">art. 1498 du CGI</span></div>
+    <p class="formule">surface pondérée × tarif (catégorie, secteur) × coefficient de localisation = valeur locative brute<br>valeur locative brute × coefficient de neutralisation = valeur locative neutralisée<br>base de taxe foncière = valeur locative ÷ 2</p>
+    <ul>
+      <li><b>Surface pondérée</b> : parties principales × 1, surfaces secondaires couvertes × 0,5, non couvertes × 0,2, parkings couverts × 0,5, non couverts × 0,2.</li>
+      <li><b>Tarif</b> : chaque département publie chaque année une grille de 38 catégories × 3 à 7 secteurs. Le secteur dépend de la section cadastrale de la parcelle. Relève embarque les grilles 2025 et 2026 des 101 départements, les secteurs de toutes les sections cadastrales, les coefficients de localisation des parcelles concernées et les coefficients de neutralisation de toutes les communes, tels que publiés par la DGFiP.</li>
+      <li><b>Coefficient de neutralisation</b> : propre à chaque commune, il ramène les valeurs révisées au niveau des anciennes valeurs pour que la réforme ne change pas le produit de l’impôt. Dans le Var il vaut par exemple 0,21 à 0,27.</li>
+    </ul>
+    <div class="chain"><b>Exemple</b> (hôtel de 1 336 m² avec 116 m² de dépendances couvertes, 130 m² non couvertes et 1 366 m² de parking, catégorie HOT2, secteur 3 du Var, 2025)
+      <table>
+        <tr><td>Surface pondérée : 1 336 + 116 × 0,5 + 130 × 0,2 + 1 366 × 0,2</td><td class="r">1 693 m²</td></tr>
+        <tr><td>× tarif HOT2 secteur 3 (74,4 €/m²) × coefficient de localisation 1</td><td class="r">125 974 €</td></tr>
+        <tr><td>× coefficient de neutralisation de la commune (0,2117)</td><td class="r">26 664 €</td></tr>
+        <tr><td>Planchonnement : moyenne avec l’ancienne valeur locative (54 743 €, voir ci-dessous)</td><td class="r">40 703 €</td></tr>
+        <tr><td>Base de taxe foncière calculée (÷ 2) · base de l’avis : 20 247 €</td><td class="r">20 352 € (+0,5 %)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="part" id="planchonnement">
+    <div class="h"><h2>3. Le planchonnement, ou pourquoi le tarif seul ne suffit pas</h2><span class="t">art. 1518 A quinquies du CGI</span></div>
+    <p>Pour un local qui existait au 1<sup>er</sup> janvier 2017, la base n’est pas la valeur révisée mais <b>la moyenne entre la valeur révisée et l’ancienne valeur locative de 1970</b>. C’est ce qui fait qu’un calcul au tarif seul donne presque toujours un résultat très différent de l’avis : plus bas pour les locaux qui ont « gagné » à la réforme, plus haut pour ceux qui y ont « perdu ». Beaucoup d’outils s’arrêtent là et annoncent une économie qui n’existe pas.</p>
+    <p>L’ancienne valeur locative n’est pas publiée, mais <b>l’avis la contient</b> : la différence entre « cotisation » et « cotisation lissée » vaut, en 2025, un dixième de l’écart initial entre l’impôt sur l’ancienne valeur et l’impôt révisé (deux dixièmes en 2024, et ainsi de suite jusqu’à 2017). Relève en déduit l’ancienne valeur locative, puis refait exactement le calcul de l’administration. Sur les dossiers de test, la base de l’avis est retrouvée à moins de 1 %.</p>
+    <div class="warnbox"><b>Gardez vos avis 2025.</b> À partir de 2026, le lissage est terminé et la ligne disparaît des avis : l’avis 2025 est le dernier qui porte cette trace. Relève l’utilise pour les années suivantes tant qu’il est sur votre poste. Pour un local sans avis 2017-2025 (ou dont l’avis regroupe plusieurs adresses sans détail), demandez la fiche d’évaluation du local au service des impôts.</div>
+  </div>
+
+  <div class="part" id="signaux">
+    <div class="h"><h2>4. Les signaux : ce que la fiche déclarée laisse soupçonner</h2></div>
+    <p>Une fois la base de l’avis reproduite, le calcul lui-même est hors de cause. Relève cherche alors les incohérences entre la fiche déclarée et ce qu’on sait du local, et chiffre chaque hypothèse :</p>
+    <ul>
+      <li><b>Catégorie incompatible avec la surface</b> : MAG1 ou MAG3 (« moins de 400 m² ») avec plus de 400 m² de surface principale ; hypothèse MAG4 ou MAG5.</li>
+      <li><b>Catégorie incompatible avec l’activité de l’occupant</b> (code NAF que vous renseignez) : un garage ou une menuiserie en « magasin » plutôt qu’en « atelier », une activité de bureau en « boutique »… ; hypothèse de la catégorie attendue.</li>
+      <li><b>Hôtel une étoile ou non classé</b> évalué en 2-3 étoiles (classement que vous renseignez) ; hypothèse HOT3.</li>
+      <li><b>Surfaces</b> : aucune surface secondaire déclarée pour un grand local, dépôt à ciel ouvert entièrement en surface principale, surface principale supérieure à l’emprise du bâti.</li>
+      <li><b>Déclaration attendue</b> par l’administration : à régulariser avant toute réclamation, sous peine de rehaussement et de perte de l’exonération temporaire des constructions nouvelles.</li>
+    </ul>
+    <p>Pour chaque signal, Relève recalcule la base avec l’hypothèse corrigée, planchonnement compris, et en déduit la taxe estimée et le gain par an. Le simulateur de la fiche client vous laisse tester vos propres hypothèses (catégorie, surfaces) en direct.</p>
+  </div>
+
+  <div class="part" id="verdict">
+    <div class="h"><h2>5. Le verdict</h2></div>
+    <ul>
+      <li><span class="vd r">Anomalie probable</span> un signal chiffré fait apparaître un gain significatif : à confirmer avec le client et les pièces, puis à réclamer.</li>
+      <li><span class="vd o">À vérifier</span> un signal sans chiffrage, un écart inexpliqué entre la base calculée et l’avis, une adresse partagée par plusieurs biens, ou une déclaration attendue : une question au client suffit souvent.</li>
+      <li><span class="vd v">Conforme</span> la base de l’avis est reproduite au tarif de la grille et aucun signal ne ressort : pas d’erreur de calcul. Le seul levier restant serait une erreur de surface ou d’usage que seul le client peut révéler.</li>
+      <li><span class="vd g">Sans avis rapproché</span> calcul au tarif seul : pas d’avis de taxe foncière à cette adresse sur votre poste, ou pas de lissage lisible.</li>
+    </ul>
+    <p>Le menu <b>Valeur locative</b> liste tous les locaux de votre portefeuille, anomalies en premier, avec le gain estimé ; la fiche client montre pour chaque local la chaîne de calcul complète, les surfaces déclarées, les points à vérifier et les questions à poser. Un classeur Excel reprend le tout. Avec Claude connecté, l’outil <span class="kbd">valeur_locative</span> donne les mêmes informations.</p>
+  </div>
+
+  <div class="part" id="faire">
+    <div class="h"><h2>6. Ce qu’il vous reste à faire</h2><span class="t">l’outil cible, l’expert-comptable décide</span></div>
+    <ul>
+      <li><b>Confirmer la réalité</b> auprès du client : plan coté ou relevé de surfaces par nature, bail, usage réel de chaque zone (vente, atelier, stockage, bureaux), classement hôtelier, travaux récents. Relève liste les questions local par local.</li>
+      <li><b>Trancher la catégorie</b> : c’est une appréciation juridique (nature, destination principale, utilisation, caractéristiques physiques du local), pas un calcul.</li>
+      <li><b>Monter le dossier</b> et déposer la réclamation (art. R*196-2 du LPF : jusqu’au 31 décembre de l’année qui suit celle de la mise en recouvrement) ou la déclaration rectificative. Le service des impôts ne corrigera jamais sur un simple calcul.</li>
+    </ul>
+  </div>
+
+  <div class="part" id="limites">
+    <div class="h"><h2>Limites</h2></div>
+    <ul>
+      <li>Les locaux industriels évalués selon la méthode comptable (art. 1499 du CGI) et les locaux évalués par appréciation directe ne relèvent pas de la grille : Relève ne les contrôle pas.</li>
+      <li>Le calcul reproduit celui de la part communale ; les autres collectivités suivent la même base avec leurs propres coefficients. Les gains sont estimés au prorata de la taxe réellement payée, frais de gestion compris : c’est une estimation, pas un décompte.</li>
+      <li>Les paramètres embarqués sont ceux publiés par la DGFiP pour les impositions 2025 et 2026 ; ils sont mis à jour avec chaque version de Relève, après la publication de décembre.</li>
+      <li>Les signaux sont des indices, pas des conclusions. L’outil ne sait pas ce qu’il y a derrière les murs : la visite, le plan et le bail priment toujours.</li>
+    </ul>
+  </div>
+
+  <div class="part" id="sources">
+    <div class="h"><h2>Sources</h2></div>
+    <ul>
+      <li><a href="https://www.impots.gouv.fr/portail/node/11406" rel="noopener">impots.gouv.fr — Révision des valeurs locatives des locaux professionnels</a> : secteurs d’évaluation, grilles tarifaires, coefficients de localisation et de neutralisation de chaque département (données publiques, réutilisées telles quelles).</li>
+      <li>Code général des impôts : art. 1498 (méthode tarifaire), 1518 ter (mise à jour des paramètres), 1518 A quinquies (neutralisation, planchonnement, lissage) ; annexe II art. 310 Q (catégories) ; annexe III art. 324 Z (pondération des surfaces).</li>
+      <li>Livre des procédures fiscales : art. R*196-2 (délai de réclamation), R*211-1 (dégrèvement d’office).</li>
+      <li>Les surfaces, catégories et parcelles viennent de votre espace professionnel impots.gouv (« Gérer mes biens immobiliers ») et des avis de vos clients.</li>
+    </ul>
+  </div>
+</div>
+<footer><div class="wrap">Créé par <a href="https://www.linkedin.com/in/romain-froment-expert-comptable-var/" rel="noopener">Romain Froment</a>, expert-comptable · Relève · outil indépendant, non affilié à la DGFiP · <a href="https://github.com/rfroment85/releve">code source ouvert (EUPL 1.2)</a> · <a href="confidentialite.html">Confidentialité</a> · <a href="mode-emploi.html">Mode d’emploi</a></div></footer>
+</body>
+</html>

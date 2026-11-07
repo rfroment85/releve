@@ -8,9 +8,11 @@ Extension Chrome / Edge pour les cabinets d'expertise comptable. Elle lit dans l
 - hausses expliquées (effet des taux, effet des bases, biens nouveaux) ;
 - prélèvements à proposer.
 
+Depuis la version 6, elle contrôle la **valeur locative des locaux professionnels** : lecture de la fiche de chaque local dans « Gérer mes biens immobiliers », recalcul de la base au tarif de la grille départementale (paramètres DGFiP des 101 départements embarqués), reconstitution du planchonnement depuis l'avis, signaux d'alerte (catégorie, surfaces, occupant, classement hôtelier), simulation et gain estimé. Démarche détaillée : https://releveavis.netlify.app/valeur-locative.html
+
 Elle propose aussi une vue des **habilitations** de l'espace (qui a accès à quel service, sur quel dossier, et ce qui manque) et le suivi des **clients à raccorder** (clients absents de l'espace du cabinet, avec un message prêt pour leur demander l'accès).
 
-Version : 5.2.3 · Licence : [EUPL 1.2](LICENSE) · Outil indépendant, non affilié à la DGFiP.
+Version : 6.0.0 · Licence : [EUPL 1.2](LICENSE) · Outil indépendant, non affilié à la DGFiP.
 
 ## Version officielle
 
@@ -23,7 +25,7 @@ Version : 5.2.3 · Licence : [EUPL 1.2](LICENSE) · Outil indépendant, non affi
 ## Règles de conception (à respecter dans toute modification)
 
 - **L'utilisateur se connecte lui-même.** Le code ne lit, ne saisit ni ne stocke jamais d'identifiant, de mot de passe ou de captcha.
-- **Lecture seule sur impots.gouv.** Aucun paiement, aucune adhésion, aucun dépôt de réclamation, aucun message. La messagerie sécurisée n'est jamais ouverte.
+- **Lecture seule sur impots.gouv.** Aucun paiement, aucune adhésion, aucun dépôt de réclamation, aucune déclaration, aucun message. La messagerie sécurisée n'est jamais ouverte. Dans « Gérer mes biens immobiliers », seules la liste des biens et la page « Consulter un bien » sont lues.
 - **Documents à payer (SATELIT).** La lecture s'arrête à la liste ; toute autre étape est refusée dans `lib/core.js` (`getAmr`).
 - **Mails et réclamations.** Ce sont uniquement des brouillons locaux (`.eml`, texte), que l'utilisateur relit et envoie lui-même.
 - **Données sur le poste uniquement** (IndexedDB de l'extension).
@@ -41,8 +43,8 @@ extension/            Extension Chrome / Edge (Manifest V3), sans dépendance ni
                       hôte : https://cfspro.impots.gouv.fr/* uniquement
   background.js       service d'arrière-plan : stockage, état des mises à jour, pastille, alertes
   content.js          orchestration de la collecte dans l'onglet impots.gouv
-  content.bundle.js   = lib/core.js + content.js, généré par build.py (c'est lui qui est chargé)
-  build.py            régénère content.bundle.js après modification de core.js ou content.js
+  content.bundle.js   = lib/pdftext.js + lib/avistf.js + lib/core.js + content.js, généré par build.py (c'est lui qui est chargé)
+  build.py            régénère content.bundle.js après modification de ces fichiers
   sidepanel.*         volet latéral
   app.*               application complète (À traiter, Demander, Clients, fiche, Collectivités,
                       Calendrier, Exports, Réglages)
@@ -55,7 +57,15 @@ extension/            Extension Chrome / Edge (Manifest V3), sans dépendance ni
   lib/files.js        ZIP, classeur Excel (xlsx écrit à la main), .eml, import CSV / xlsx
   lib/recherche.js    « Demander » : questions prêtes, filtres, rendu des réponses de Claude
                       (Habilitations et Clients à raccorder : dans app.js ; lecture dans lib/core.js, getHabilitations)
-  lib/db.js           IndexedDB (nom technique « avis-collector », à ne pas changer)
+  lib/pdftext.js      extraction du texte des PDF (partagée collecte / application)
+  lib/avistf.js       détail par adresse des avis de taxe foncière (base, cotisation, cotisation lissée)
+  lib/vl.js           valeur locative des locaux professionnels : calcul, reconstitution de l'ancienne valeur
+                      locative, signaux, simulation, analyse du portefeuille (fonctions pures + données)
+  vlui.js             page « Valeur locative », bloc de la fiche client, simulateur, export, relecture des avis
+  data/rvllp/         paramètres d'évaluation de chaque département (JSON) : tarifs 2025 et 2026, secteurs par
+                      section cadastrale, coefficients de localisation 2024 et 2026, coefficients de neutralisation.
+                      Source : https://www.impots.gouv.fr/portail/node/11406 (voir docs/ETAT.md)
+  lib/db.js           IndexedDB (nom technique « avis-collector », à ne pas changer ; version 2 depuis la 6.0 : magasin « biens »)
   lib/mcp.js          passerelle vers le connecteur Claude (outils exposés à Claude)
   lib/update.js       vérification de version
   lib/icons.js        icônes SVG
@@ -77,7 +87,7 @@ docs/ETAT.md          État détaillé de l'outil, règles d'analyse, historique
 2. Cliquer sur **Charger l'extension non empaquetée** et choisir le dossier `extension/`.
 3. Ouvrir l'espace professionnel impots.gouv, se connecter, puis cliquer sur l'icône Relève.
 
-Après une modification de `lib/core.js` ou `content.js` : lancer `python3 build.py` dans `extension/`, puis cliquer sur « Recharger » dans `chrome://extensions`.
+Après une modification de `lib/core.js`, `content.js`, `lib/pdftext.js` ou `lib/avistf.js` : lancer `python3 build.py` dans `extension/`, puis cliquer sur « Recharger » dans `chrome://extensions`. Aucun fichier ni dossier dont le nom commence par `_` dans `extension/` : Chrome refuserait de charger l'extension.
 
 ### Identifiant d'extension
 

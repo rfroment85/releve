@@ -7,8 +7,9 @@ const ACDB = (() => {
   const open = () => dbp || (dbp = new Promise((res, rej) => {
     const r = indexedDB.open(NAME, VERSION);
     r.onupgradeneeded = () => { const db = r.result; for (const [n, k] of Object.entries(STORES)) if (!db.objectStoreNames.contains(n)) db.createObjectStore(n, { keyPath: k }); };
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
+    r.onsuccess = () => { const db = r.result; db.onversionchange = () => { db.close(); dbp = null; }; res(db); };
+    r.onerror = () => { dbp = null; rej(r.error); };
+    r.onblocked = () => { dbp = null; rej(new Error('Base locale bloquée par une autre page de Relève : fermez-la puis réessayez.')); };
   }));
   const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
   const store = async (name, mode = 'readonly') => (await open()).transaction(name, mode).objectStore(name);

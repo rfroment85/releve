@@ -12,13 +12,13 @@
 <div class="wrap narrow">
   <header class="top">
     <a class="brand" href="./"><span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z"/><path d="M10 13l2 2 4-4"/></svg></span>Relève</a>
-    <nav><a href="mode-emploi.html" class="on">Mode d’emploi</a><a href="confidentialite.html">Confidentialité</a></nav>
+    <nav><a href="mode-emploi.html" class="on">Mode d’emploi</a><a href="valeur-locative.html">Valeur locative</a><a href="confidentialite.html">Confidentialité</a></nav>
   </header>
 
   <button class="btn print" onclick="window.print()">Imprimer</button>
   <h1 style="font-size:34px">Mode d’emploi</h1>
   <p class="lead" style="font-size:17px">Installation une seule fois, en 3 minutes. Ensuite, un clic suffit.</p>
-  <div class="toc"><a href="#installer">1. Installer</a><a href="#utiliser">2. Utiliser</a><a href="#controles">Contrôles</a><a href="#claude">Avec Claude</a><a href="#mise-a-jour">3. Mettre à jour</a><a href="#questions">Questions</a></div>
+  <div class="toc"><a href="#installer">1. Installer</a><a href="#utiliser">2. Utiliser</a><a href="#controles">Contrôles</a><a href="#valeur-locative">Valeur locative</a><a href="#claude">Avec Claude</a><a href="#mise-a-jour">3. Mettre à jour</a><a href="#questions">Questions</a></div>
 
   <!-- ============ INSTALLER ============ -->
   <div class="part" id="installer">
@@ -90,6 +90,17 @@
   </div>
 
   <!-- ============ DEMANDER ============ -->
+  <div class="part" id="valeur-locative">
+    <div class="h"><h2>Valeur locative des locaux professionnels</h2><span class="t">menu « Valeur locative », depuis la version 6</span></div>
+    <div class="grid2">
+      <div class="card"><h3>Ce qui se passe à la mise à jour</h3><p>Pour chaque dossier, Relève lit désormais « Gérer mes biens immobiliers » : la liste des biens, puis la fiche de chaque local professionnel (surfaces, catégorie, parcelle, droit). Lecture seule, sans ouvrir de déclaration. Comptez environ une seconde de plus par dossier la première fois ; ensuite les biens ne sont relus qu’une fois par mois (ou en « Tout relire »). Le service doit être délégué au cabinet par le client ; sinon le dossier apparaît dans « sans accès aux biens ». Désactivable dans Réglages.</p></div>
+      <div class="card"><h3>Ce que vous voyez</h3><p>Le menu <b>Valeur locative</b> liste tous les locaux professionnels, anomalies probables en premier, avec la base de l’avis, la base recalculée, l’écart, le verdict et le gain estimé par an. Dans la <b>fiche client</b>, chaque local montre ses surfaces déclarées, la chaîne de calcul (secteur, tarif, neutralisation, planchonnement), les points à vérifier et les questions à poser au client.</p></div>
+      <div class="card"><h3>Simuler et renseigner</h3><p>Sous chaque local, « Simuler une autre hypothèse » permet de changer la catégorie ou les surfaces et de voir aussitôt la base et la taxe estimées ; « Enregistrer » garde l’hypothèse. Renseignez le nom et le code NAF de l’occupant et, pour un hôtel, son classement : Relève en tire des signaux supplémentaires. Un local hors sujet se met de côté avec « Écarter ».</p></div>
+      <div class="card"><h3>Les avis déjà sur le poste</h3><p>Le détail par adresse (base, cotisation, cotisation lissée) n’était pas extrait avant la version 6 : à la première ouverture de la page, les avis de taxe foncière présents sur le poste sont relus, en arrière-plan. Gardez vos avis 2025 : ce sont les derniers qui portent la ligne de lissage, indispensable au calcul.</p></div>
+    </div>
+    <p class="note">La méthode, ses limites et ses sources : <a href="valeur-locative.html">page « Valeur locative »</a>. Les verdicts sont des indices à confirmer avec le client et les pièces ; la réclamation reste un brouillon que vous déposez vous-même.</p>
+  </div>
+
   <div class="part" id="demander">
     <div class="h"><h2>Demander</h2><span class="t">questions prêtes et filtres</span></div>
     <p style="color:var(--ink2)">Dans l’application Relève, ouvrez <b>Demander</b> et cliquez une question : « À prévenir sous 7 jours », « Créances échues », « Plus fortes hausses », « Bilan de la campagne »… Affinez si besoin avec les filtres (taxe, commune, collaborateur, échéance, montant mini). La réponse affiche les clients concernés avec les boutons habituels : préparer le message, marquer fait, ouvrir sur impots.gouv.</p>
