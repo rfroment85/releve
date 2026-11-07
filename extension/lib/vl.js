@@ -176,7 +176,7 @@ const ACVL = (() => {
     if (modif && ref && ref.base) {
       const cot = cotisationPour(base.base, ref.base, cotRef), g = cotRef && cot !== null ? cotRef - cot : null;
       const quoi = [local.categorie !== local.categorieDeclaree ? `catégorie ${nomCat(local.categorie)} au lieu de ${nomCat(local.categorieDeclaree)}` : '', surfDiff ? 'surfaces corrigées' : ''].filter(Boolean).join(', ');
-      sims.unshift({ code: 'SAISIE', gravite: g > 100 ? 3 : 1, titre: `Avec votre hypothèse (${quoi})`, texte: `Base recalculée ${Math.round(base.base).toLocaleString('fr-FR')} € contre ${Math.round(ref.base).toLocaleString('fr-FR')} € sur l’avis ${ref.annee}.`, simulation: { base: base.base, cotisation: cot, gain: g, hypothese: { categorie: local.categorie, surfaces: local.surfaces } }, question: 'À étayer par des pièces (plan, bail, photos) avant réclamation.' });
+      sims.unshift({ code: 'SAISIE', gravite: g > 100 ? 3 : 1, hypothese: { categorie: local.categorie !== local.categorieDeclaree ? local.categorie : null, surfaces: surfDiff ? local.surfaces : null }, titre: `Avec votre hypothèse (${quoi})`, texte: `Base recalculée ${Math.round(base.base).toLocaleString('fr-FR')} € contre ${Math.round(ref.base).toLocaleString('fr-FR')} € sur l’avis ${ref.annee}.`, simulation: { base: base.base, cotisation: cot, gain: g, hypothese: { categorie: local.categorie, surfaces: local.surfaces } }, question: 'À étayer par des pièces (plan, bail, photos) avant réclamation.' });
     }
     return { annee: anRef, calcul: base, reconstitution: rec, ecart, ref, signaux: sims, verdict: verdict(ecart, sims, rec, ref), hypothese: !!modif };
   }
@@ -273,7 +273,36 @@ const ACVL = (() => {
     return out;
   }
   const VERDICTS = { ROUGE: 'Anomalie probable', ORANGE: 'À vérifier', VERT: 'Conforme', GRIS: 'Sans avis rapproché', EXCLU: 'Écarté', HORS: 'Hors champ', ERREUR: 'Non calculé' };
-  return { CATEGORIES, COURT, nomCat, POND, LIB_SURF, DEPARTEMENTS, VERDICTS, portefeuille, categorieCode, depCode, communeCode, normNom, surfacePonderee, charger, normDep, secteur, coefLoc, tarif, neut, evaluer, vl70DepuisAvis, cotisationPour, signaux, analyser, verdict };
+  // ---- Statut lisible par un non-spécialiste (partagé application / outil Claude) ----
+  // k : clé du statut ; enjeu : € par an en jeu ; certitude : 'probable' | 'possible' | null
+  const STATUTS = {
+    TROP: { lib: 'Trop payé probable', court: 'Trop payé', ton: 'bad', ordre: 0, phrase: 'Votre taxe est probablement trop élevée.' },
+    PISTE: { lib: 'Trop payé possible', court: 'Écart à creuser', ton: 'warn', ordre: 1, phrase: 'La taxe de l’avis dépasse notre recalcul au tarif officiel : erreur possible en votre faveur, ou élément que nous ne voyons pas.' },
+    QUESTION: { lib: 'Question au client', court: 'Question', ton: 'acc', ordre: 2, phrase: 'Un point de la déclaration mérite une question au client avant de conclure.' },
+    MANQUE: { lib: 'Avis manquant', court: 'Avis manquant', ton: '', ordre: 3, phrase: 'Recalcul fait au tarif officiel, mais aucun avis de taxe foncière à cette adresse pour comparer.' },
+    NONCALC: { lib: 'Non calculé', court: 'Non calculé', ton: '', ordre: 4, phrase: 'Relève n’a pas pu refaire le calcul.' },
+    FAVORABLE: { lib: 'Avis plus bas que la grille', court: 'Ne pas réclamer', ton: 'ok', ordre: 5, phrase: 'L’avis est plus bas que le tarif officiel : rien à réclamer, et une révision pourrait même augmenter la taxe.' },
+    OK: { lib: 'Rien à signaler', court: 'Rien à signaler', ton: 'ok', ordre: 6, phrase: 'Notre recalcul au tarif officiel retrouve la base de l’avis : pas d’erreur de calcul.' },
+    HORS: { lib: 'Hors champ', court: 'Hors champ', ton: '', ordre: 7, phrase: 'Local industriel évalué selon une autre méthode (comptable) : la grille ne s’applique pas.' },
+    ECARTE: { lib: 'Écarté', court: 'Écarté', ton: '', ordre: 8, phrase: 'Vous avez écarté ce local du contrôle.' },
+  };
+  function statut(l) {
+    const a = l.analyse || {}, v = a.verdict, sig = a.signaux || [];
+    const mk = (k, extra = {}) => ({ k, ...STATUTS[k], enjeu: null, certitude: null, ...extra });
+    if (l.exclu) return mk('ECARTE');
+    if (!v) return mk('NONCALC', { raison: a.erreur || '' });
+    if (v.code === 'HORS') return mk('HORS');
+    const cotRef = a.ref ? (a.ref.cotisationTotale || a.ref.cotisation) : null;
+    const grave = sig.find((x) => x.gravite >= 2 && !(x.simulation && x.simulation.gain > 100));
+    if (v.code === 'ROUGE') { const s0 = sig.filter((x) => x.simulation && x.simulation.gain > 100).sort((x, y) => y.simulation.gain - x.simulation.gain)[0]; return mk('TROP', { enjeu: l.gain, certitude: 'probable', signal: s0 || null }); }
+    if (a.ecart !== null && a.ecart !== undefined && a.ecart < -0.05 && cotRef) return mk('PISTE', { enjeu: cotRef * -a.ecart, certitude: 'possible', signal: grave || null });
+    if (grave) return mk('QUESTION', { signal: grave });
+    if (v.code === 'ORANGE' && a.ecart !== null && a.ecart !== undefined && a.ecart > 0.05) return mk('FAVORABLE');
+    if (v.code === 'VERT') return mk('OK');
+    if (v.code === 'GRIS') return mk('MANQUE');
+    return mk(a.ecart > 0.05 ? 'FAVORABLE' : 'OK');
+  }
+  return { STATUTS, statut, CATEGORIES, COURT, nomCat, POND, LIB_SURF, DEPARTEMENTS, VERDICTS, portefeuille, categorieCode, depCode, communeCode, normNom, surfacePonderee, charger, normDep, secteur, coefLoc, tarif, neut, evaluer, vl70DepuisAvis, cotisationPour, signaux, analyser, verdict };
 })();
 if (typeof self !== 'undefined') self.ACVL = ACVL;
 if (typeof module !== 'undefined') module.exports = ACVL;

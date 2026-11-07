@@ -16,7 +16,7 @@
   .chain tr:last-child td { border-bottom: 0; font-weight: 600 }
   .formule { font-family: ui-monospace, Consolas, monospace; background: var(--line2); border-radius: 8px; padding: 10px 14px; font-size: 14.5px; overflow-x: auto }
   .vd { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13.5px; font-weight: 600 }
-  .vd.r { background: #FDECEA; color: #B42318 } .vd.o { background: var(--warn-bg); color: #9A6200 } .vd.v { background: var(--ok-bg); color: var(--ok) } .vd.g { background: var(--line2); color: var(--ink2) }
+  .vd.r { background: #FDECEA; color: #B42318 } .vd.o { background: var(--warn-bg); color: #9A6200 } .vd.v { background: var(--ok-bg); color: var(--ok) } .vd.g { background: var(--line2); color: var(--ink2) } .vd.b { background: #E9EEF7; color: #142850 }
   .warnbox { background: var(--warn-bg); border-radius: 12px; padding: 16px 18px; margin: 18px 0; font-size: 15px }
   .part p { color: var(--ink2) }
   .part li { color: var(--ink2); margin-bottom: 6px }
@@ -32,7 +32,7 @@
   <h1 style="font-size:34px">Contrôler le calcul de la taxe foncière des locaux professionnels</h1>
   <p class="lead" style="font-size:17px">Nouveau dans Relève 6 : pour chaque local professionnel de vos clients, Relève refait le calcul de l’administration à partir de ce qui est déclaré, le compare à l’avis et vous dit où regarder. Voici la démarche, étape par étape, et ses limites.</p>
 
-  <div class="toc"><a href="#pourquoi">Pourquoi</a><a href="#lecture">1. Ce que Relève lit</a><a href="#calcul">2. Le calcul</a><a href="#planchonnement">3. Le planchonnement</a><a href="#signaux">4. Les signaux</a><a href="#verdict">5. Le verdict</a><a href="#faire">6. Ce qu’il vous reste à faire</a><a href="#limites">Limites</a><a href="#sources">Sources</a></div>
+  <div class="toc"><a href="#pourquoi">Pourquoi</a><a href="#lecture">1. Ce que Relève lit</a><a href="#calcul">2. Le calcul</a><a href="#planchonnement">3. Le planchonnement</a><a href="#signaux">4. Les signaux</a><a href="#verdict">5. Les statuts</a><a href="#faire">6. Ce qu’il vous reste à faire</a><a href="#limites">Limites</a><a href="#sources">Sources</a></div>
 
   <div class="part" id="pourquoi">
     <div class="h"><h2>Pourquoi ce contrôle</h2></div>
@@ -90,14 +90,15 @@
   </div>
 
   <div class="part" id="verdict">
-    <div class="h"><h2>5. Le verdict</h2></div>
+    <div class="h"><h2>5. Le statut de chaque local</h2><span class="t">quatre statuts, écrits pour quelqu’un qui n’a jamais lu un avis</span></div>
     <ul>
-      <li><span class="vd r">Anomalie probable</span> un signal chiffré fait apparaître un gain significatif : à confirmer avec le client et les pièces, puis à réclamer.</li>
-      <li><span class="vd o">À vérifier</span> un signal sans chiffrage, un écart inexpliqué entre la base calculée et l’avis, une adresse partagée par plusieurs biens, ou une déclaration attendue : une question au client suffit souvent.</li>
-      <li><span class="vd v">Conforme</span> la base de l’avis est reproduite au tarif de la grille et aucun signal ne ressort : pas d’erreur de calcul. Le seul levier restant serait une erreur de surface ou d’usage que seul le client peut révéler.</li>
-      <li><span class="vd g">Sans avis rapproché</span> calcul au tarif seul : pas d’avis de taxe foncière à cette adresse sur votre poste, ou pas de lissage lisible.</li>
+      <li><span class="vd r">Trop payé probable</span> un défaut précis de la fiche (catégorie, surface, classement hôtelier, occupant) fait payer plus de 100 € de trop par an : Relève sait quoi réclamer et chiffre l’enjeu. Action : faire confirmer par le client, puis <b>préparer la réclamation</b> (brouillon rédigé par Relève).</li>
+      <li><span class="vd o">Trop payé possible</span> l’avis dépasse de plus de 5 % notre recalcul, sans que la fiche l’explique : l’enjeu est réel (il est affiché), mais la cause est inconnue : élément taxé absent des fiches lues, surface retenue différente, ou erreur de l’administration. Action : <b>demander le relevé de propriété</b>, qui donne la base de chaque local.</li>
+      <li><span class="vd b">Question au client</span> un point de la fiche mérite confirmation avant de conclure (déclaration attendue, surface qui dépasse l’emprise du bâti, activité de l’occupant incompatible avec la catégorie…). Action : <b>poser la question</b> (brouillon rédigé par Relève), noter la réponse.</li>
+      <li><span class="vd v">Rien à signaler</span> la base de l’avis est retrouvée au tarif officiel (à 5 % près). Variante <span class="vd v">Avis plus bas que la grille</span> : l’avis est inférieur à ce que donnerait la grille ; c’est à l’avantage du client, surtout ne rien réclamer.</li>
+      <li><span class="vd g">Avis manquant</span> recalcul fait, mais aucun avis de taxe foncière à cette adresse sur le poste. <span class="vd g">Non calculé</span> commune ou références cadastrales non lues (à compléter dans la fiche). <span class="vd g">Hors champ</span> local industriel évalué selon la méthode comptable.</li>
     </ul>
-    <p>Le menu <b>Valeur locative</b> liste tous les locaux de votre portefeuille, anomalies en premier, avec le gain estimé ; la fiche client montre pour chaque local la chaîne de calcul complète, les surfaces déclarées, les points à vérifier et les questions à poser. Un classeur Excel reprend le tout. Avec Claude connecté, l’outil <span class="kbd">valeur_locative</span> donne les mêmes informations.</p>
+    <p>Le menu <b>Valeur locative</b> s’ouvre sur le résultat (« trop payé probable : X € par an »), puis quatre tuiles de statut qui filtrent la liste, et la liste « À faire » classée par enjeu. Dans la <b>fiche client</b>, chaque local commence par une phrase simple, puis un <b>calcul en escalier</b> (surface pondérée → tarif → valeur locative → base → base de l’avis), les <b>questions à poser au client</b> à cocher, et les boutons d’action : réclamation, question au client, demande de relevé de propriété, tous rédigés par Relève et à relire avant envoi. Le niveau <b>Expert</b> ajoute la chaîne de calcul complète ; une <b>visite guidée</b> de deux minutes présente l’écran à la première ouverture. Un classeur Excel reprend le tout. Avec Claude connecté, l’outil <span class="kbd">valeur_locative</span> donne les mêmes informations.</p>
   </div>
 
   <div class="part" id="faire">
