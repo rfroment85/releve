@@ -4,7 +4,10 @@
 const AC = { running: false, stop: false, total: 0, done: 0, current: '' };
 
 const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
-const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => null);
+// Après un rechargement de l'extension, l'ancien script resté dans un onglet ouvert n'a plus accès à l'extension (« Extension context invalidated ») :
+// l'appel échoue alors en silence au lieu de remplir le journal d'erreurs de chrome://extensions (le nouveau script, injecté au rechargement, prend le relais)
+const vivant = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch { return false; } };
+const send = (msg) => { if (!vivant()) return Promise.resolve(null); try { return chrome.runtime.sendMessage(msg).catch(() => null); } catch { return Promise.resolve(null); } };
 
 function pageState() {
   const t = document.body ? document.body.innerText : '';
@@ -241,7 +244,7 @@ async function bandeau() {
   try {
     if (window.top !== window || document.getElementById('avis-collector-bandeau')) return;
     const siren = siretAffiche(); if (!siren) return;
-    const r = await chrome.runtime.sendMessage({ type: 'ac:siteInfo', siren }).catch(() => null);
+    const r = await send({ type: 'ac:siteInfo', siren });
     if (!r || !r.n) return;
     const host = document.createElement('div'); host.id = 'avis-collector-bandeau';
     host.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483000;';
@@ -255,8 +258,8 @@ async function bandeau() {
       .o{background:#1F3B6E;color:#fff} .x{background:transparent;color:#C9CBD1}
     </style><div class="b"><div class="l"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z"/><path d="M10 13l2 2 4-4"/></svg></div>
       <div class="t"><b>${r.n} action${r.n > 1 ? 's' : ''} pour ce client</b><span>${esc(r.resume)}</span><div class="a"><button class="o">Ouvrir la fiche</button><button class="x">Masquer</button></div></div></div>`;
-    sh.querySelector('.o').onclick = () => chrome.runtime.sendMessage({ type: 'ac:openApp', hash: 'client/' + siren }).catch(() => {});
-    sh.querySelector('.x').onclick = () => { host.remove(); chrome.runtime.sendMessage({ type: 'ac:hideBanner', siren }).catch(() => {}); };
+    sh.querySelector('.o').onclick = () => { if (!vivant()) { host.remove(); return; } send({ type: 'ac:openApp', hash: 'client/' + siren }); };
+    sh.querySelector('.x').onclick = () => { host.remove(); send({ type: 'ac:hideBanner', siren }); };
     document.documentElement.appendChild(host);
   } catch {}
 }
