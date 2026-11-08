@@ -55,9 +55,9 @@
   </section>
 
   <section style="padding-top:0">
-    <h2 class="reveal">Relève en 45 secondes</h2>
-    <div class="shot reveal video"><video controls muted playsinline preload="metadata" poster="img/releve-presentation-poster.jpg" width="1280" height="720" id="film"><source src="img/releve-presentation.mp4" type="video/mp4">Votre navigateur ne lit pas cette vidéo : <a href="img/releve-presentation.mp4">la télécharger</a>.</video></div>
-    <p class="note">Sans son, sous-titrée. Données fictives.</p>
+    <h2 class="reveal">Relève en une minute</h2>
+    <div class="shot reveal video"><video controls playsinline preload="metadata" poster="img/releve-presentation-poster.jpg" width="1280" height="720" id="film"><source src="img/releve-presentation.mp4" type="video/mp4">Votre navigateur ne lit pas cette vidéo : <a href="img/releve-presentation.mp4">la télécharger</a>.</video></div>
+    <p class="note">Toutes les fonctionnalités en 1 min 09 : avis, hausses expliquées, CFE, messages, et la nouveauté sur la taxe foncière. Voix off de synthèse, sous-titrée. Données fictives.</p>
   </section>
 
   <section style="padding-top:10px">
@@ -124,7 +124,7 @@ fetch('version.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{document.get
   const io = new IntersectionObserver((es) => es.forEach((e) => { if (!e.isIntersecting) return; e.target.classList.add('in'); e.target.querySelectorAll('[data-to]').forEach(count); io.unobserve(e.target); }), { threshold: .2 });
   document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
   // La vidéo démarre (muette) quand elle entre à l'écran, et se met en pause quand elle en sort
-  const film = document.getElementById('film'); if (film && !calme) { new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) film.play().catch(() => {}); else film.pause(); }), { threshold: .5 }).observe(film); }
+  const film = document.getElementById('film'); if (film) { new IntersectionObserver((es) => es.forEach((e) => { if (!e.isIntersecting && !film.paused) film.pause(); }), { threshold: .2 }).observe(film); }
 })();
 </script>
 </body>
