@@ -41,7 +41,7 @@ function aLire(part, k, now, cycle = 0) {
   if (!k) return true;
   const at = k[part + 'At'] || 0, age = now - at;
   if (cycle && at >= cycle && age < 7 * 24 * H) return false; // lu pendant la mise à jour interrompue : reprise sans relecture
-  if (part === 'amr') return age > (k.amrIndispo ? 30 * 24 * H : 7 * 24 * H);
+  if (part === 'amr') return age > (k.amrIndispo ? 30 * 24 * H : k.amrN > 0 ? 20 * H : 7 * 24 * H); // documents à payer : relus chaque jour tant qu'il y en a (un paiement les fait disparaître)
   if (part === 'dettes') return age > 20 * H;
   if (part === 'pay') return age > 20 * H;
   if (part === 'gmbi') return age > 30 * 24 * H; // biens immobiliers : les surfaces et catégories bougent rarement
@@ -187,7 +187,7 @@ async function collect(opts) {
           const parts = [(async () => { for (const t of lireT) { if (AC.stop) break; await avecReprise(t.label, d, () => lireTaxe(t, d, out)); } })()];
           if (lireD) parts.push(avecReprise('dettes fiscales', d, async () => { dt = await getDettes(); out.dettesAt = Date.now(); stats.dettes += dt.rows.length; }));
           await Promise.all(parts);
-          if (lireA && !AC.stop) await avecReprise('documents à payer', d, async () => { const a = await getAmr(token, d.siren); token = a.token; am = a; out.amrAt = Date.now(); out.amrIndispo = a.indispo || ''; stats.amr += a.rows.length; });
+          if (lireA && !AC.stop) await avecReprise('documents à payer', d, async () => { const a = await getAmr(token, d.siren); token = a.token; am = a; out.amrAt = Date.now(); out.amrIndispo = a.indispo || ''; out.amrN = a.rows.length; stats.amr += a.rows.length; });
           if (dt || am) await send({ type: 'ac:dettes', siren: d.siren, nom: d.nom, rows: dt ? dt.rows : null, total: dt ? numVal(dt.total) : null, amr: am ? am.rows : null, amrIndispo: am ? (am.indispo || '') : undefined, compte });
           // Paiements d'impôts locaux (date, montant, nature) : dit à la source si chaque avis de l'année est payé
           // (lecture abandonnée pour le reste de la mise à jour après 3 échecs de suite : service absent de cet espace, page changée…)

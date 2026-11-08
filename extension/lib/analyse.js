@@ -148,7 +148,8 @@ const ACA = (() => {
     for (const a of libres) {
       if (a.pris) continue;
       const sc = get(a);
-      sc.retard.push({ impot: 'AMR', annee: '', commune: '', reference: `n° ${a.amr}`, dateLimite: '', jours: 0, montant: a.montant, majoration: 0, exigible: a.montant, amr: a.amr, amrRow: a, dette: null, petit: a.montant < seuilDette, seul: true });
+      const ma = moisAmr(a), MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+      sc.retard.push({ impot: 'AMR', annee: '', commune: '', reference: `n° ${a.amr}`, emis: ma ? `${MOIS[+ma.slice(4) - 1]} ${ma.slice(0, 4)}` : '', dateLimite: '', jours: 0, montant: a.montant, majoration: 0, exigible: a.montant, amr: a.amr, amrRow: a, dette: null, petit: a.montant < seuilDette, seul: true });
     }
     for (const sc of Object.values(out)) { sc.retard = sc.retard.filter((l) => !l.petit); sc.retard.sort((x, y) => y.exigible - x.exigible); sc.totalRetard = sc.retard.reduce((t, l) => t + l.exigible, 0); }
     return out;

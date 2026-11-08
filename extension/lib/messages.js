@@ -13,7 +13,7 @@ const detteCtx = (r) => ({ id: 'det:' + r.siren + r.reference, siren: r.siren, n
 const amrCtx = (r) => ({ id: 'amr:' + r.siren + r.amr, siren: r.siren, nom: r.nom, taxe: 'AMR', label: 'avis de mise en recouvrement', labelCourt: 'AMR', annee: '', montant: r.montant, amr: r.amr, hasPdf: false });
 // Plusieurs créances d'un même client (dettes échues et avis de mise en recouvrement rapprochés) : un seul contexte
 const dettesCtx = (t) => ({ id: 'det:' + t.siren, siren: t.siren, nom: t.nom, taxe: 'DETTES', label: 'créances', labelCourt: 'Créances', annee: '', montant: t.montant, lignes: t.dettes || [], hasPdf: false });
-const ligneDette = (l) => l.impot === 'AMR' ? `avis de mise en recouvrement ${l.reference} : ${eur2(l.exigible)}` : `${IMPOT_LIB[l.impot] || l.impot} ${l.annee}${l.commune ? ` (${l.commune})` : ''}${l.reference && !/^Déclaration$/i.test(l.reference) ? `, ${l.reference}` : ''} : ${eur2(l.montant)} échus le ${l.dateLimite}${l.amr ? `, portés à ${eur2(l.exigible)} par l’avis de mise en recouvrement n° ${l.amr}` : ''}`;
+const ligneDette = (l) => l.impot === 'AMR' ? `avis de mise en recouvrement ${l.reference}${l.emis ? ` (émis en ${l.emis})` : ''} : ${eur2(l.exigible)}` : `${IMPOT_LIB[l.impot] || l.impot} ${l.annee}${l.commune ? ` (${l.commune})` : ''}${l.reference && !/^Déclaration$/i.test(l.reference) ? `, ${l.reference}` : ''} : ${eur2(l.montant)} échus le ${l.dateLimite}${l.amr ? `, portés à ${eur2(l.exigible)} par l’avis de mise en recouvrement n° ${l.amr}` : ''}`;
 // Une action « message » → élément de message { kind, a, task }
 function mailItem(t) {
   if (!t || !t.action || !t.action.startsWith('mail')) return null;

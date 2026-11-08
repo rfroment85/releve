@@ -63,7 +63,7 @@ async function handle(msg, sender) {
       const lus = (await ACDB.all('avis')).filter((a) => { const c = (a.infos && a.infos.controle) || ''; return /SIREN PDF \d+ ≠|référence PDF \S+ ≠|référence .* absente du PDF|PDF non récupéré/.test(c) || (/dénomination .* non trouvée/.test(c) && /montant PDF/.test(c)); });
       const douteux = new Set(lus.map((a) => a.id));
       const ids = (await ACDB.keys('pdfs')).filter((id) => !douteux.has(id));
-      const dossiers = Object.fromEntries((await ACDB.all('dossiers')).map((x) => [x.siren, { annees: x.annees, checkedAt: x.checkedAt, tfAt: x.tfAt, cfeAt: x.cfeAt, dettesAt: x.dettesAt, amrAt: x.amrAt, amrIndispo: x.amrIndispo, gmbiAt: x.gmbiAt, gmbiIndispo: x.gmbiIndispo }]));
+      const dossiers = Object.fromEntries((await ACDB.all('dossiers')).map((x) => [x.siren, { annees: x.annees, checkedAt: x.checkedAt, tfAt: x.tfAt, cfeAt: x.cfeAt, dettesAt: x.dettesAt, amrAt: x.amrAt, amrIndispo: x.amrIndispo, amrN: x.amrN, gmbiAt: x.gmbiAt, gmbiIndispo: x.gmbiIndispo }]));
       // … et la page de l'impôt concerné est relue dès la prochaine mise à jour, même rapide
       for (const a of lus) { const k = dossiers[a.siren]; if (k) k[a.taxe === 'TF' ? 'tfAt' : 'cfeAt'] = 0; }
       for (const x of await ACDB.all('dossiers')) if (dossiers[x.siren]) dossiers[x.siren].payAt = x.payAt;
