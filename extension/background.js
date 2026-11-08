@@ -120,7 +120,7 @@ async function handle(msg, sender) {
     case 'ac:started': {
       RUN = { ...fresh(), running: true, startedAt: Date.now(), phase: 'liste', label: 'Démarrage…', last: RUN.last, opts: msg.opts || null };
       // Cycle de mise à jour : ouvert au premier lancement, fermé quand une mise à jour du cabinet va au bout ; une interruption laisse le cycle ouvert (reprise sans relecture)
-      if (!(await ACDB.get('meta', 'cycle'))) await ACDB.put('meta', { key: 'cycle', startedAt: Date.now() });
+      if (!(msg.opts && msg.opts.unique) && !(await ACDB.get('meta', 'cycle'))) await ACDB.put('meta', { key: 'cycle', startedAt: Date.now() });
       save(); broadcast();
       return { ok: true };
     }
@@ -135,14 +135,15 @@ async function handle(msg, sender) {
       save();
       return { ok: true };
     case 'ac:done': {
-      const run = { at: Date.now(), stats: msg.stats, duree: msg.duree, annee: msg.annee, scope: msg.scope ? msg.scope.length : null, stopped: !!msg.stopped, complet: !!msg.complet, compte: msg.compte || '', dejaLus: msg.dejaLus || 0, logs: RUN.logs.slice(0, 50) };
+      const run = { at: Date.now(), stats: msg.stats, duree: msg.duree, annee: msg.annee, scope: msg.scope ? msg.scope.length : null, stopped: !!msg.stopped, complet: !!msg.complet, compte: msg.compte || '', dejaLus: msg.dejaLus || 0, unique: msg.unique || '', logs: RUN.logs.slice(0, 50) };
       await ACDB.put('runs', run);
-      if (!msg.stopped) await ACDB.del('meta', 'cycle'); // mise à jour allée au bout : le prochain lancement ouvre un nouveau cycle (règle des 20 h)
+      // mise à jour allée au bout : le prochain lancement ouvre un nouveau cycle (règle des 20 h) ; l'actualisation d'un seul client ne touche pas au cycle
+      if (!msg.stopped && !msg.unique) await ACDB.del('meta', 'cycle');
       await voirCompte(msg.compte);
       await recalculerVl();
       const open = await refreshBadge();
       RUN = { ...RUN, running: false, done: RUN.total, eta: null, opts: null, session: false, last: { ...run, open } };
-      if ((msg.duree || 0) > 60) notify('fin', 'Mise à jour terminée', `${run.stats.dossiers} dossiers lus · ${open} action${open > 1 ? 's' : ''} dans votre liste de travail.`, 'a-traiter');
+      if ((msg.duree || 0) > 60 && !msg.unique) notify('fin', 'Mise à jour terminée', `${run.stats.dossiers} dossiers lus · ${open} action${open > 1 ? 's' : ''} dans votre liste de travail.`, 'a-traiter');
       save(); broadcast();
       return { ok: true };
     }
@@ -182,6 +183,24 @@ async function handle(msg, sender) {
       const ask = () => chrome.tabs.sendMessage(tab.id, { type: 'ac:goto', siren: msg.siren, page: msg.page });
       try { return await ask(); } catch {}
       try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.bundle.js'] }); return await ask(); } catch (e) { return { ok: false, error: 'Onglet impots.gouv injoignable : rechargez-le.' }; }
+    }
+    case 'ac:majClient': {
+      // Actualiser un seul client depuis sa fiche : toutes ses pages relues (avis, dettes, documents à payer, paiements, biens), en quelques secondes
+      if (RUN.running) return { ok: false, error: 'Une mise à jour est déjà en cours : attendez la fin.' };
+      const tabs = await chrome.tabs.query({ url: HOST + '*' });
+      const tab = tabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
+      if (!tab) return { ok: false, error: 'Ouvrez votre espace professionnel impots.gouv et connectez-vous, puis cliquez à nouveau.' };
+      const ask = (m) => chrome.tabs.sendMessage(tab.id, m);
+      let st = null;
+      try { st = await ask({ type: 'ac:ping' }); } catch { try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.bundle.js'] }); st = await ask({ type: 'ac:ping' }); } catch { return { ok: false, error: 'Onglet impots.gouv injoignable : rechargez-le.' }; } }
+      if (!st || st.login || st.expired) return { ok: false, error: 'Session impots.gouv expirée : reconnectez-vous dans l’onglet impots.gouv, puis cliquez à nouveau.' };
+      if (st.running) return { ok: false, error: 'Une lecture est déjà en cours dans l’onglet impots.gouv.' };
+      const S = await ACDB.settings();
+      const opts = { annee: ACA.anneeCampagne(), taxes: ['TF', 'CFE'], delay: 60, complet: true, dettes: true, amr: S.amr !== false, biens: S.biens !== false, paiements: true, scope: [msg.siren], unique: { siren: msg.siren, nom: msg.nom || '' } };
+      RUN = { ...fresh(), running: true, startedAt: Date.now(), phase: 'dossiers', total: 1, aFaire: 1, label: 'Actualisation de ' + (msg.nom || msg.siren), last: RUN.last, opts };
+      save(); broadcast();
+      try { await ask({ type: 'ac:start', opts }); } catch (e) { RUN = { ...RUN, running: false, opts: null }; save(); broadcast(); return { ok: false, error: 'Onglet impots.gouv injoignable : rechargez-le.' }; }
+      return { ok: true };
     }
     case 'ac:habilRun': {
       // Lecture des habilitations dans l'onglet impots.gouv (jamais pendant une mise à jour)

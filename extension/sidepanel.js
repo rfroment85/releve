@@ -87,8 +87,8 @@ function statusPills() {
 function summaryBlock(c) {
   const annee = c.annee, open = c.taches.filter((t) => !t.done && !t.snoozed);
   if (!c.avis.length) return '';
-  const last = V.data.runs[0];
-  const neuf = last ? c.avis.filter((a) => a.firstSeenAt && a.firstSeenAt >= (V.data.runs[1]?.at || 0) && a.firstSeenAt <= last.at + 1000).length : 0;
+  const runsG = V.data.runs.filter((r) => !r.unique), last = runsG[0];
+  const neuf = last ? c.avis.filter((a) => a.firstSeenAt && a.firstSeenAt >= (runsG[1]?.at || 0) && a.firstSeenAt <= last.at + 1000).length : 0;
   const tfN = c.N.filter((a) => a.taxe === 'TF'), acN = c.N.filter((a) => a.taxe === 'CFE' && a.acompte), cfeN = c.N.filter((a) => a.taxe === 'CFE' && !a.acompte);
   const doss = (arr) => new Set(arr.map((a) => a.siren)).size;
   const row = (t, s, pill, go) => `<div class="row${go ? ' go' : ''}"${go ? ` data-go="${go}"` : ''}><div class="grow"><div class="t">${t}</div><div class="s">${s}</div></div>${pill}</div>`;
@@ -256,7 +256,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg && msg.type === 'ac:state') {
     const was = V.run && V.run.running;
     V.run = msg.run;
-    if (was && !msg.run.running) { V.showDone = !msg.run.error; loadData().then(render); }
+    if (was && !msg.run.running) { V.showDone = !msg.run.error && !(msg.run.last && msg.run.last.unique); loadData().then(render); }
     else if (msg.run.running) { if (!V.data) return; V.showDone = true; render(); }
   }
 });

@@ -71,7 +71,19 @@ async function collect(opts) {
     // Liste gardée en mémoire (reprise rapide) : réutilisée seulement si elle correspond à l'espace connecté maintenant
     // (sinon, après un changement de compte impots.gouv, on lirait les dossiers de l'espace précédent)
     let dossiers = null;
-    if (opts.dossiers && opts.dossiers.length) { try { if (await listeToujoursValable(token, opts.dossiers)) dossiers = opts.dossiers; } catch (e) { if (/Session expirée/.test(e.message)) throw e; } }
+    // Un seul client (bouton « Actualiser » de la fiche) : on vérifie qu'il est bien dans l'espace connecté, sans lire toute la liste
+    if (opts.unique) {
+      const u = opts.unique;
+      const h = await fetchText(`${BASE}/mire/afficherSelectionDossier.do?idth=consulter.avis.cfe&siren=${encodeURIComponent(u.siren)}&token=${token}`);
+      const trouve = extractDossiers(h).find((x) => x.siren === u.siren);
+      if (trouve) dossiers = [{ siren: u.siren, nom: trouve.nom || u.nom || u.siren }];
+      else {
+        const m = await dossierDeLEspace().catch(() => null);
+        if (m && m.siren === u.siren) dossiers = [{ ...m, nom: u.nom || m.nom || u.siren }];
+        else throw new Error(`Ce client n’est pas dans l’espace professionnel connecté${compte ? ' (compte ' + compte + ')' : ''} : connectez-vous à l’espace qui le suit`);
+      }
+    }
+    if (!dossiers && opts.dossiers && opts.dossiers.length) { try { if (await listeToujoursValable(token, opts.dossiers)) dossiers = opts.dossiers; } catch (e) { if (/Session expirée/.test(e.message)) throw e; } }
     if (!dossiers) {
       try { dossiers = await listDossiers(token, (p, n) => send({ type: 'ac:progress', phase: 'liste', done: p, total: n, label: `Liste des dossiers : page ${p} / ${n}` })); }
       catch (e) { if (/Session expirée/.test(e.message)) throw e; dossiers = []; }
@@ -171,7 +183,7 @@ async function collect(opts) {
       const lireB = opts.biens !== false && aLire('gmbi', k, now, cycle);
       // Paiements d'impôts locaux : autour des échéances, pour les dossiers qui ont (ou peuvent avoir) un avis de l'année
       const aDesAvisN = !k || lireT.length || Object.values((k.annees || {})).some((l) => (l || []).includes(annee));
-      const lireP = opts.paiements !== false && enPeriodePaiement() && aDesAvisN && aLire('pay', k, now, cycle);
+      const lireP = opts.paiements !== false && (opts.unique || enPeriodePaiement()) && aDesAvisN && aLire('pay', k, now, cycle);
       stats.pagesEvitees += (taxes.length - lireT.length) + (opts.dettes !== false && !lireD ? 1 : 0) + (opts.amr !== false && !lireA ? 1 : 0) + (opts.biens !== false && !lireB ? 1 : 0);
       const out = { annees: { ...((kd[d.siren] || {}).annees || {}) }, compte };
       const lit = lireT.length || lireD || lireA || lireB || lireP, tDossier = Date.now();
@@ -217,7 +229,7 @@ async function collect(opts) {
       if (lit && pause) await sleep(pause);
     }
     AC.done = AC.total;
-    await send({ type: 'ac:done', stats, stopped: AC.stop, duree: Math.round((Date.now() - t0) / 1000), annee: opts.annee, scope: opts.scope || null, complet, compte, dejaLus, aFaire });
+    await send({ type: 'ac:done', stats, stopped: AC.stop, duree: Math.round((Date.now() - t0) / 1000), annee: opts.annee, scope: opts.scope || null, complet, compte, dejaLus, aFaire, unique: opts.unique ? opts.unique.siren : '' });
   } catch (e) {
     await send({ type: 'ac:error', text: e.message, stats, session: /Session expirée/.test(e.message) });
   } finally {

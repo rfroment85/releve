@@ -64,7 +64,7 @@ const ACMCP = (() => {
   const tools = {
     async resume(p = {}) {
       const X = await ctx(p), c = X.c, open = c.taches.filter((t) => !t.done && !t.snoozed);
-      const last = X.data.runs[0];
+      const last = X.data.runs.find((r) => !r.unique);
       const comptes = Object.entries(X.S.comptes || {});
       return {
         campagne: c.annee, perimetre: X.S.scope === 'moi' ? 'mon portefeuille' : 'tout le cabinet', noms_masques: X.anon,

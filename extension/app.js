@@ -29,6 +29,7 @@ const dur = (sec) => { sec = Math.max(30, Math.round(sec)); if (sec < 90) return
 // Mise à jour en cours : bloc d'avancement en tête de page (reprise visible, temps restant calculé sur les dossiers réellement à lire)
 function runBlock() {
   const r = A.run; if (!r || !r.running) return '';
+  if (r.opts && r.opts.unique) return `<div class="runblock" id="runBlock"><div class="rb-head"><span class="rb-ico">${IC.refresh}</span><b>Actualisation en cours</b><span class="rb-phase">${esc(r.label || '')}</span><span class="rb-eta">quelques secondes</span></div><div class="bar"><i style="width:${Math.min(95, 20 + (Date.now() - (r.startedAt || Date.now())) / 150)}%"></i></div></div>`;
   const total = r.total || 0, deja = r.dejaLus || 0, faits = r.faits || 0, aFaire = r.aFaire || 0, avance = Math.min(total, deja + faits);
   const pct = total ? Math.round(avance / total * 100) : (r.phase === 'liste' ? 3 : 0);
   const phase = r.phase === 'liste' ? 'Lecture de la liste des dossiers' : r.phase === 'attente' ? 'Connexion interrompue, en attente' : `${avance.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} dossiers`;
@@ -109,7 +110,7 @@ function shell() {
     ${Object.values(A.data.tasks).filter((t) => t.status || t.note).length >= 10 && (!A.backupAt || Date.now() - A.backupAt > 30 * 864e5) ? `<a class="bknudge" href="#reglages">${IC.down} Pensez à sauvegarder vos données</a>` : ''}
     <div class="tiny muted" style="padding:10px 8px 0;display:flex;gap:6px">${IC.lock} Données sur ce poste</div>
     <div class="tiny muted auteur" style="padding:4px 8px 0">Créé par ${auteurLien()}, ${AUTEUR.titre}</div>`;
-  const last = A.data.runs[0], mine = scopeSirens();
+  const last = A.data.runs.find((r) => !r.unique), mine = scopeSirens();
   $('#topbar').innerHTML = `<label class="search">${IC.search}<input id="q" type="search" placeholder="Rechercher un client, un SIREN, une commune" value="${esc(A.qRaw || '')}"><kbd title="Touche / : aller à la recherche">/</kbd></label>
     <div class="seg" id="scope"><button data-s="moi" class="${scopeMoi() ? 'on' : ''}">Mon portefeuille${mine.length ? ` (${mine.length})` : ''}</button><button data-s="tous" class="${scopeMoi() ? '' : 'on'}">Tout le cabinet</button></div>
     ${comptesConnus().length > 1 ? `<label class="compte" title="Compte impots.gouv (espace professionnel) dont proviennent les données"><span class="tiny muted">Compte</span><select id="compteSel"><option value="">Tous les comptes</option>${comptesConnus().map(([ab, c]) => `<option value="${esc(ab)}"${A.S.compte === ab ? ' selected' : ''}>${esc(c.nom || 'Compte ' + ab)}</option>`).join('')}</select></label>` : ''}
@@ -440,7 +441,9 @@ function pageClient(arg) {
     const d = (A.data.dossiers || []).find((x) => x.siren === siren), b = (A.data.biens || []).find((x) => x.siren === siren);
     if (!d && !b) return `<a class="back" href="#clients">${IC.arrowL} Clients</a><div class="card empty">Client introuvable sur ce poste.</div>`;
     return `<a class="back" href="#valeur-locative">${IC.arrowL} Valeur locative</a>
-    <div class="ph"><div><h1>${esc((b && b.nom) || (d && d.nom) || siren)}</h1><div class="sub">SIREN ${fmtSiren(siren)}${info.code ? ` · Dossier ${esc(info.code)}` : ''}${info.collaborateur ? ` · Suivi par ${esc(info.collaborateur)}` : ''}</div></div></div>
+    <div class="ph"><div><h1>${esc((b && b.nom) || (d && d.nom) || siren)}</h1><div class="sub">SIREN ${fmtSiren(siren)}${info.code ? ` · Dossier ${esc(info.code)}` : ''}${info.collaborateur ? ` · Suivi par ${esc(info.collaborateur)}` : ''}${d && d.checkedAt ? ` · lu sur impots.gouv ${ago(d.checkedAt)}` : ''}</div></div>
+    <div class="r"><button class="btn" id="majClient" title="Relit maintenant, pour ce seul client : avis, dettes fiscales, documents à payer, paiements et biens immobiliers (quelques secondes, onglet impots.gouv connecté)">${IC.refresh} Actualiser</button><button class="btn" id="onSite">${IC.ext} impots.gouv</button></div></div>
+    ${dettesBlock(siren, (A.c.situation || {})[siren] || { retard: [], aVenir: [], payees: [], totalRetard: 0, totalAVenir: 0 })}
     <div class="card empty" style="margin-bottom:14px">Aucun avis de ce dossier sur ce poste (pas encore d’avis de taxe foncière, ou dossier hors périmètre de la dernière mise à jour).</div>
     ${vlClientBlock(siren)}`;
   }
@@ -458,7 +461,8 @@ function pageClient(arg) {
   const histHtml = Object.entries(hist).filter(([, y]) => Object.keys(y).length >= 2).map(([k, y]) => { const ys = Object.keys(y).sort().slice(-6), max = Math.max(...ys.map((x) => y[x])); return `<div class="card av"><h3>${TAXE_LABEL[k]} sur ${ys.length} ans</h3><div class="hist">${ys.map((x) => `<div class="b${x === A.c.annee ? ' cur' : ''}"><span class="num">${eur(y[x])}</span><i style="height:${Math.max(4, y[x] / max * 70)}px"></i>${x}</div>`).join('')}</div></div>`; }).join('');
   return `<a class="back" href="#a-traiter">${IC.arrowL} Retour à la liste de travail</a>
   <div class="ph"><div><h1>${esc(nom)}</h1><div class="meta"><span>SIREN ${fmtSiren(siren)}</span>${info.code ? `<span>Dossier ${esc(info.code)}</span>` : ''}${info.collaborateur ? `<span>Suivi par ${esc(info.collaborateur)}</span>` : ''}<span>${info.email ? esc(info.email) : '<a href="#" id="addMail">Ajouter l’e-mail du client</a>'}</span></div></div>
-  <div class="r">${main ? `<button class="btn primary" id="mailMain">${IC.mail} Préparer le message${clientMailItems(siren).length > 1 ? ` (${clientMailItems(siren).length} points)` : ''}</button>` : ''}${main && main.hasPdf ? `<button class="btn" data-pdf="${esc(main.id)}">${IC.doc} Ouvrir l’avis ${A.c.annee}</button>` : ''}<button class="btn" id="onSite" title="Sélectionne ce dossier dans votre espace professionnel">${IC.ext} impots.gouv</button></div></div>
+  <div class="r">${main ? `<button class="btn primary" id="mailMain">${IC.mail} Préparer le message${clientMailItems(siren).length > 1 ? ` (${clientMailItems(siren).length} points)` : ''}</button>` : ''}${main && main.hasPdf ? `<button class="btn" data-pdf="${esc(main.id)}">${IC.doc} Ouvrir l’avis ${A.c.annee}</button>` : ''}<button class="btn" id="majClient" title="Relit maintenant, pour ce seul client : avis, dettes fiscales, documents à payer, paiements et biens immobiliers (quelques secondes, onglet impots.gouv connecté)">${IC.refresh} Actualiser</button><button class="btn" id="onSite" title="Sélectionne ce dossier dans votre espace professionnel">${IC.ext} impots.gouv</button></div></div>
+  ${(() => { const d = A.data.dossiers.find((x) => x.siren === siren); return d && d.checkedAt ? `<div class="tiny muted" style="margin:-6px 0 10px">Données lues sur impots.gouv ${ago(d.checkedAt)}${d.comptes && d.comptes.length && comptesConnus().length > 1 ? ' · ' + d.comptes.map(compteLib).map(esc).join(', ') : ''}</div>` : ''; })()}
   <div class="badges">${N.filter((a) => a.n1 && !a.acompte).map((a) => `<span class="pill ${a.d.pct > 0.5 ? (a.hausse ? 'bad' : 'warn') : 'ok'}">${TAXE_LABEL[a.taxe]} ${esc(a.commune || '')} : ${pcv(a.d.pct)}</span>`).join('')}
     ${N.some((a) => a.etatPaiement === 'paye') ? `<span class="pill ok" title="Paiement constaté sur impots.gouv (synthèse des paiements ou absence de créance)">${N.filter((a) => a.etatPaiement === 'paye').length > 1 ? 'Avis échus payés' : 'Avis échu payé'}</span>` : ''}
     ${[...new Set(N.filter((a) => a.etatPaiement !== 'paye').map((a) => a.prel).filter(Boolean))].map((p) => p === 'NON' ? '<span class="pill acc">À payer par le client</span>' : p === 'MENSUEL' ? '<span class="pill">Mensualisé : rien à payer en plus</span>' : '<span class="pill ok">Prélevé à l’échéance</span>').join('')}
@@ -533,6 +537,13 @@ function bindClient(arg) {
   bindAncres();
   bindVl(siren);
   const os = $('#onSite'); if (os) os.onclick = () => openOnSite(siren, 'accueil');
+  const mc = $('#majClient'); if (mc) mc.onclick = async () => {
+    mc.disabled = true; mc.innerHTML = `${IC.refresh} Lecture…`; mc.classList.add('spin');
+    const nom = ((A.data.avis.find((a) => a.siren === siren) || A.data.dossiers.find((d) => d.siren === siren) || {}).nom) || '';
+    const r = await chrome.runtime.sendMessage({ type: 'ac:majClient', siren, nom }).catch((e) => ({ ok: false, error: e.message }));
+    if (!r || !r.ok) { mc.disabled = false; mc.classList.remove('spin'); mc.innerHTML = `${IC.refresh} Actualiser`; toast((r && r.error) || 'Actualisation impossible'); return; }
+    A.majClient = siren;
+  };
   const od = $('#onSiteDettes'); if (od) od.onclick = () => openOnSite(siren, 'dettes');
   const cn = $('#caNicOk'); if (cn) cn.onclick = () => saveCaNic(siren);
   const ci = $('#cnoteIn'), co = $('#cnoteOk');
@@ -1350,9 +1361,11 @@ chrome.runtime.onMessage.addListener((msg) => {
     return;
   }
   if (msg && msg.type === 'ac:state' && msg.run && !msg.run.running) { const was = A.run && A.run.running; A.run = msg.run; if (was) { shell(); majRunBlock(); } }
+  if (msg && msg.type === 'ac:state' && msg.run && !msg.run.running && msg.run.error && A.majClient) { const s = A.majClient; A.majClient = ''; toast('Actualisation impossible : ' + msg.run.error); if (route().p === 'client') page(); }
   if (msg && msg.type === 'ac:state' && msg.run && !msg.run.running && msg.run.last && msg.run.last.at !== A.lastRun) {
-    A.lastRun = msg.run.last.at;
-    load().then(() => { render(); toast('Mise à jour terminée : la liste de travail est à jour'); });
+    A.lastRun = msg.run.last.at; const L = msg.run.last;
+    if (L.unique) { A.majClient = ''; const y = window.scrollY; load().then(() => { render(); window.scrollTo(0, y); const st = L.stats || {}; toast(`Client actualisé en ${Math.max(1, L.duree || 0)} s${st.nouveaux ? ' · ' + plural(st.nouveaux, 'nouvel avis', 'nouveaux avis') : ''}${st.erreurs ? ' · ' + plural(st.erreurs, 'page non lue', 'pages non lues') : ''}`); }); }
+    else load().then(() => { render(); toast('Mise à jour terminée : la liste de travail est à jour'); });
   }
 });
 let lastFocusLoad = Date.now();
