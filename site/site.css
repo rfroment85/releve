@@ -60,7 +60,7 @@ footer a { color: var(--ink2); }
 .kbd { font-family: ui-monospace, Consolas, monospace; background: var(--line2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-size: 14.5px; white-space: nowrap; }
 .copy { cursor: pointer; border: 1px solid var(--line); background: #fff; border-radius: 7px; padding: 2px 9px; font-size: 13px; margin-left: 6px; color: var(--ink2); }
 .tip { margin-top: 10px; padding: 10px 13px; border-radius: 10px; background: var(--info-bg); color: #1E3A8A; font-size: 14.5px; }
-.warn { margin-top: 10px; padding: 10px 13px; border-radius: 10px; background: var(--warn-bg); color: #6B4500; font-size: 14.5px; }
+div.warn { margin-top: 10px; padding: 10px 13px; border-radius: 10px; background: var(--warn-bg); color: #6B4500; font-size: 14.5px; }
 .edge { color: var(--ink3); font-size: 14.5px; }
 details { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; }
 details summary { cursor: pointer; font-weight: 600; }
