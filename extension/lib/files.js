@@ -95,22 +95,60 @@ ${sh.filter !== false && sh.rows.length ? `<autoFilter ref="A${headRow}:${lastCo
   };
 }
 
-// Fichier de correspondance cabinet : SIREN ; code dossier ; collaborateur ; agence ; email client (en-têtes libres, séparateur ; , ou tabulation)
-function parseCorrespondance(text) {
+// Fichier de correspondance cabinet : SIREN ; nom ; code dossier ; collaborateur ; agence ; email client
+// En-têtes libres, ligne d'en-tête trouvée même sous un titre, séparateur ; , ou tabulation, champs entre guillemets acceptés.
+function csvCells(line, sep) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"' && !cur.trim()) q = true;
+    else if (ch === sep) { out.push(cur.trim()); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+function colonnesCorrespondance(head) {
+  const pris = new Set();
+  // Pour chaque clé, dans l'ordre de priorité, la première colonne qui la contient et n'est ni prise ni exclue
+  const find = (keys, exclure = []) => { for (const k of keys) { const i = head.findIndex((h, j) => !pris.has(j) && h.includes(k) && !exclure.some((x) => h.includes(x))); if (i >= 0) { pris.add(i); return i; } } return -1; };
+  const iS = find(['siren', 'siret']);
+  const iE = find(['mail', 'courriel']);
+  const iK = find(['collaborateur', 'collab', 'gestionnaire', 'responsable', 'chefdemission', 'chefmission', 'assistant'], ['nomclient', 'raison']);
+  const iA = find(['agence', 'bureau', 'etablissementcabinet', 'site'], ['siret', 'web', 'internet']);
+  const iN = find(['raisonsociale', 'denomination', 'nomclient', 'nomdudossier', 'nomdossier', 'nomentreprise', 'nomsociete', 'libelledossier', 'libelle', 'intitule', 'designation', 'client', 'societe', 'entreprise', 'tiers', 'nom'], ['prenom', 'contact', 'dirigeant', 'collab', 'gestionnaire', 'responsable', 'chef', 'expert', 'commercial', 'code', 'numero', 'ville', 'commune']);
+  const iC = find(['codedossier', 'codeclient', 'numerodossier', 'numdossier', 'refdossier', 'code', 'dossier', 'reference'], ['postal', 'naf', 'ape', 'insee', 'commune', 'pays', 'activite']);
+  return { iS, iN, iC, iK, iA, iE };
+}
+function parseCorrespondance(text, info) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length) return {};
-  const sep = [';', ',', '\t'].sort((a, b) => lines[0].split(b).length - lines[0].split(a).length)[0];
-  const norm = (h) => h.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-  const head = lines[0].split(sep).map(norm);
-  const find = (...keys) => head.findIndex((h) => keys.some((k) => h.includes(k)));
-  const iS = find('siren', 'siret'), iC = find('codedossier', 'code', 'dossier'), iK = find('collab', 'gestionnaire', 'responsable'), iA = find('agence', 'site', 'bureau'), iE = find('mail', 'courriel');
-  const iN = head.findIndex((h, i) => i !== iC && ['raisonsociale', 'denomination', 'nomclient', 'client', 'societe', 'entreprise', 'nom'].some((k) => h.includes(k)));
+  const norm = (h) => h.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  // Ligne d'en-tête : la première (parmi les 15 premières) qui annonce un SIREN ou un SIRET ; sinon pas d'en-tête
+  let ih = lines.slice(0, 15).findIndex((l) => /siren|siret/i.test(l.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+  const ref = lines[ih >= 0 ? ih : 0];
+  const sep = [';', '\t', ','].sort((a, b) => csvCells(ref, b).length - csvCells(ref, a).length)[0];
+  let cols = { iS: -1, iN: -1, iC: -1, iK: -1, iA: -1, iE: -1 };
+  if (ih >= 0) cols = colonnesCorrespondance(csvCells(ref, sep).map(norm));
+  else {
+    // Sans en-tête : la colonne SIREN est celle qui contient le plus de numéros à 9 ou 14 chiffres
+    const n = csvCells(lines[0], sep).length, score = Array(n).fill(0);
+    for (const l of lines.slice(0, 50)) csvCells(l, sep).forEach((c, j) => { const d = c.replace(/[\s.]/g, ''); if (/^\d{9}$|^\d{14}$/.test(d)) score[j]++; });
+    cols.iS = score.indexOf(Math.max(...score));
+    // … et la colonne du nom, celle qui contient le plus souvent des mots (lettres et espace, sans @)
+    const mots = Array(n).fill(0);
+    for (const l of lines.slice(0, 50)) csvCells(l, sep).forEach((c, j) => { if (j !== cols.iS && /[a-zà-ÿ]{2,}.*\s.*[a-zà-ÿ]/i.test(c) && !c.includes('@')) mots[j]++; });
+    const m = Math.max(...mots); if (m > 0) cols.iN = mots.indexOf(m);
+  }
+  const { iS, iN, iC, iK, iA, iE } = cols;
+  if (info) Object.assign(info, { entete: ih >= 0, nom: iN >= 0, code: iC >= 0, collaborateur: iK >= 0, email: iE >= 0 });
   const map = {};
-  for (const l of lines.slice(iS >= 0 ? 1 : 0)) {
-    const c = l.split(sep).map((x) => x.replace(/^"|"$/g, '').trim());
+  for (const l of lines.slice(ih >= 0 ? ih + 1 : 0)) {
+    const c = csvCells(l, sep);
     const siren = (c[iS >= 0 ? iS : 0] || '').replace(/\D/g, '').slice(0, 9);
     if (siren.length !== 9) continue;
-    const rec = { code: iC >= 0 ? c[iC] : '', nom: iN >= 0 ? c[iN] : '', collaborateur: iK >= 0 ? c[iK] : '', agence: iA >= 0 ? c[iA] : '', email: iE >= 0 ? (c[iE] || '').match(/[^\s;,]+@[^\s;,]+/)?.[0] || '' : '' };
+    const rec = { code: iC >= 0 ? c[iC] || '' : '', nom: iN >= 0 ? c[iN] || '' : '', collaborateur: iK >= 0 ? c[iK] || '' : '', agence: iA >= 0 ? c[iA] || '' : '', email: iE >= 0 ? (c[iE] || '').match(/[^\s;,]+@[^\s;,]+/)?.[0] || '' : '' };
     const prev = map[siren];
     if (prev) {
       // Même SIREN sur plusieurs lignes (plusieurs dossiers fiscaux, plusieurs établissements) : on garde la première et on cumule les codes, collaborateurs et e-mails

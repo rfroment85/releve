@@ -849,9 +849,9 @@ function bindReglages() {
   navigator.storage && navigator.storage.estimate && navigator.storage.estimate().then((e) => { const u = $('#usage'); if (u) u.textContent += ` · ${(e.usage / 1048576).toFixed(0)} Mo utilisés`; });
   $('#fCorr').onchange = async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
-    const map = parseCorrespondance(await fileToText(f)), n = Object.keys(map).length, nM = Object.values(map).filter((v) => v.email).length;
+    const info = {}, map = parseCorrespondance(await fileToText(f), info), v = Object.values(map), n = v.length, nM = v.filter((x) => x.email).length, nN = v.filter((x) => x.nom).length;
     if (!n) { toast('Aucun SIREN reconnu dans ce fichier'); return; }
-    save({ correspondance: map }, `${plural(n, 'dossier')} importé${n > 1 ? 's' : ''} · ${nM ? plural(nM, 'adresse e-mail', 'adresses e-mail') : 'aucune colonne e-mail reconnue'}`);
+    save({ correspondance: map }, `${plural(n, 'dossier')} importé${n > 1 ? 's' : ''} · ${nN ? (nN === n ? 'noms reconnus' : `${nN} noms reconnus sur ${n}`) : 'aucune colonne de nom reconnue (Raison sociale, Nom, Dénomination…)'} · ${nM ? plural(nM, 'adresse e-mail', 'adresses e-mail') : 'aucune colonne e-mail reconnue'}`);
   };
   const cc = $('#clrCorr'); if (cc) cc.onclick = () => save({ correspondance: {}, moi: '' }, 'Fichier retiré');
   const cps = $('#cpSave'); if (cps) cps.onclick = () => { const c = { ...(A.S.comptes || {}) }; $$('.cpNom').forEach((i) => { c[i.dataset.ab] = { ...(c[i.dataset.ab] || {}), nom: i.value.trim() }; }); save({ comptes: c }, 'Noms des comptes enregistrés'); };
@@ -1015,8 +1015,9 @@ const ROLE_LIB = { AT: 'Titulaire', AS: 'Suppléant', N1: 'Délégant', N2: 'Act
 const SERVICE_CLE = 'Consulter le Compte fiscal';
 function nomDe(siren) {
   const c = (A.S.correspondance || {})[siren] || {};
-  const dans = (arr) => { const x = (arr || []).find((r) => r.siren === siren); return x && x.nom && !/^Entreprise \d{9}$/.test(x.nom) ? x.nom : ''; };
-  return (A.habil && A.habil.noms && A.habil.noms[siren]) || (A.dossierList.find((d) => d.siren === siren) || {}).nom || dans(A.data.avis) || dans(A.data.dossiers) || dans(A.data.biens) || dans(A.data.dettes) || c.nom || '';
+  const vrai = (n) => n && !/^(Entreprise )?[\d\s]{9,14}$/.test(String(n).trim()) ? n : '';
+  const dans = (arr) => { const x = (arr || []).find((r) => r.siren === siren); return x ? vrai(x.nom) : ''; };
+  return vrai(A.habil && A.habil.noms && A.habil.noms[siren]) || vrai((A.dossierList.find((d) => d.siren === siren) || {}).nom) || dans(A.data.avis) || dans(A.data.dossiers) || dans(A.data.biens) || dans(A.data.dettes) || vrai(c.nom) || '';
 }
 // Lignes d'habilitations du compte filtré (A.hf.compte = index du compte dans A.habil.comptes, '' = tous)
 function habRows() { const H = A.habil; if (!H) return []; const f = A.hf.compte; return f === '' || f === undefined || !(H.comptes || []).length ? H.rows : H.rows.filter((r) => String(r[4] || 0) === String(f)); }
@@ -1034,7 +1035,7 @@ function clientsARaccorder() {
     const manque = !base.has(siren) ? 'absent' : !cf.has(siren) ? 'compte fiscal' : '';
     if (!manque && !r.demandeAt) continue;
     const statut = !manque ? 'raccorde' : r.ignore ? 'ignore' : !r.demandeAt ? 'a-demander' : now - (r.relanceAt || r.demandeAt) > 7 * 864e5 ? 'relancer' : 'demande';
-    out.push({ siren, nom: c.nom || nomDe(siren), code: c.code || '', collab: c.collaborateur || '', email: c.email || '', manque, statut, r });
+    out.push({ siren, nom: nomDe(siren), code: c.code || '', collab: c.collaborateur || '', email: c.email || '', manque, statut, r });
   }
   const ordre = { relancer: 0, 'a-demander': 1, demande: 2, raccorde: 3, ignore: 4 };
   return out.sort((a, b) => ordre[a.statut] - ordre[b.statut] || a.nom.localeCompare(b.nom, 'fr'));
@@ -1158,7 +1159,7 @@ function sansHtml(iS, l, corr) {
   const n = (e) => l.filter((x) => x.etat === e).length;
   return `<div class="selhead"><p class="small" style="margin:0"><b>${plural(l.length, 'dossier')} sans « ${esc(H.services[iS])} »</b> · ${n(0)} jamais attribué${n(0) > 1 ? 's' : ''}${n(3) ? ` · ${n(3)} supprimé${n(3) > 1 ? 's' : ''}` : ''}${n(2) ? ` · ${n(2)} en veille` : ''}</p>${l.length ? `<button class="btn sm" id="habSelXlsx">${IC.down} Exporter la sélection</button>` : ''}</div>
     <p class="tiny muted" style="margin:0 0 10px">Parmi les dossiers où vous avez au moins un service actif${Object.keys(corr).length ? ', et ceux du fichier des dossiers' : ''}.</p>
-    ${l.length ? `<table class="t"><thead><tr><th>Client</th><th>Collaborateur</th><th>Ce service</th><th class="r">Autres services actifs</th></tr></thead>${lignesProgressives('habBody', l.map((x) => `<tr><td><b>${esc(x.nom || '—')}</b><div class="tiny muted">${fmtSiren(x.siren)}${x.code ? ' · ' + esc(x.code) : ''}</div></td><td class="small">${esc(x.collab)}</td><td>${x.etat === 0 ? '<span class="pill">Jamais attribué</span>' : `<span class="pill acc">${ETAT_SANS[x.etat]}</span>`}</td><td class="r num">${x.autres || '<span class="muted">aucun</span>'}</td></tr>`))}</table>` : '<div class="empty">Tous les dossiers ont ce service.</div>'}`;
+    ${l.length ? `<table class="t"><thead><tr><th>Client</th><th>Collaborateur</th><th>Ce service</th><th class="r">Autres services actifs</th></tr></thead>${lignesProgressives('habBody', l.map((x) => `<tr><td><b>${x.nom ? esc(x.nom) : '<span class="muted" style="font-weight:500">Nom inconnu</span>'}</b><div class="tiny muted">${fmtSiren(x.siren)}${x.code ? ' · ' + esc(x.code) : ''}</div></td><td class="small">${esc(x.collab)}</td><td>${x.etat === 0 ? '<span class="pill">Jamais attribué</span>' : `<span class="pill acc">${ETAT_SANS[x.etat]}</span>`}</td><td class="r num">${x.autres || '<span class="muted">aucun</span>'}</td></tr>`))}</table>` : '<div class="empty">Tous les dossiers ont ce service.</div>'}`;
 }
 function pageRaccorder() {
   const corr = A.S.correspondance || {};
@@ -1174,12 +1175,13 @@ function pageRaccorder() {
       <span class="small"><b>${cnt('a-demander')}</b> à demander · <b>${cnt('relancer')}</b> à relancer · ${cnt('demande')} en attente · ${cnt('raccorde')} raccordés</span>
       <span class="small muted">Comparaison avec : ${source}${A.habil ? ` (lue ${ago(A.habil.at)})` : ''}</span>
       <label class="small" style="margin-left:auto;display:flex;gap:6px;align-items:center">N° d’abonné communiqué aux clients <input id="rAbonne" value="${esc(A.S.abonne || '')}" placeholder="à renseigner" style="width:130px;border:1px solid var(--line);border-radius:7px;padding:4px 7px"></label></div>
+    ${(() => { const sansNom = all.filter((x) => !x.nom).length; return sansNom ? `<div class="card" style="padding:10px 14px;margin-bottom:12px;background:var(--warn-bg);border-color:#F1E3B5;font-size:13.5px;color:#6B4500">${plural(sansNom, 'client', 'clients')} sans nom : ${sansNom > 1 ? 'ils sont absents' : 'il est absent'} de votre espace, et le fichier des dossiers importé n’a pas de colonne de nom reconnue pour ${sansNom > 1 ? 'eux' : 'lui'}. Réimportez-le dans <a href="#reglages">Réglages</a> avec une colonne « Raison sociale », « Nom » ou « Dénomination ».</div>` : ''; })()}
     <div class="card filtres">
       <label class="flt"><span>Rechercher</span><input id="rq" type="search" value="${esc(f.q)}" placeholder="Client, SIREN, code" style="width:180px"></label>
       ${sel('rStatut', [['', 'À traiter et suivis'], ['a-demander', 'À demander'], ['relancer', 'À relancer'], ['demande', 'Demandés'], ['raccorde', 'Raccordés'], ['ignore', 'Ignorés']], f.statut, 'Statut')}
       ${collabs.length ? sel('rCollab', [['', 'Tous'], ...collabs.map((c) => [c, c])], f.collab, 'Collaborateur') : ''}</div>
     ${A.rsel.size ? `<div class="selbar"><b>${plural(A.rsel.size, 'client sélectionné', 'clients sélectionnés')}</b><button class="btn sm primary" id="rBulkMail">${IC.mail} Préparer les messages</button><button class="btn sm" id="rBulkDone">${IC.check} Marquer demandé</button><button class="btn sm ghost" id="rBulkClear">Désélectionner</button></div>` : ''}
-    <div class="card rep">${l.length ? `<div class="selhead"><p class="small" style="margin:0"><b>${plural(l.length, 'client')}</b></p><button class="btn sm" id="rXlsx">${IC.down} Exporter la sélection</button></div><table class="t"><thead><tr><th style="width:20px"><input type="checkbox" id="rAll"></th><th>Client</th><th>Collaborateur</th><th>Ce qui manque</th><th>Suivi</th><th></th></tr></thead>${lignesProgressives('rBody', l.map((x) => `<tr data-r="${x.siren}"><td><input type="checkbox" class="rsel" ${A.rsel.has(x.siren) ? 'checked' : ''}></td><td><b>${esc(x.nom || '—')}</b><div class="tiny muted">${fmtSiren(x.siren)}${x.code ? ' · ' + esc(x.code) : ''}${x.email ? ' · ' + esc(x.email) : ' · <span style="color:var(--bad)">e-mail manquant</span>'}</div></td><td class="small">${esc(x.collab)}</td><td class="small">${x.manque === 'absent' ? 'Absent de votre espace' : x.manque === 'compte fiscal' ? 'Pas d’accès au compte fiscal' : '—'}</td><td>${pill(x)}</td>
+    <div class="card rep">${l.length ? `<div class="selhead"><p class="small" style="margin:0"><b>${plural(l.length, 'client')}</b></p><button class="btn sm" id="rXlsx">${IC.down} Exporter la sélection</button></div><table class="t"><thead><tr><th style="width:20px"><input type="checkbox" id="rAll"></th><th>Client</th><th>Collaborateur</th><th>Ce qui manque</th><th>Suivi</th><th></th></tr></thead>${lignesProgressives('rBody', l.map((x) => `<tr data-r="${x.siren}"><td><input type="checkbox" class="rsel" ${A.rsel.has(x.siren) ? 'checked' : ''}></td><td><b>${x.nom ? esc(x.nom) : '<span class="muted" style="font-weight:500">Nom inconnu</span>'}</b><div class="tiny muted">${fmtSiren(x.siren)}${x.code ? ' · ' + esc(x.code) : ''}${x.email ? ' · ' + esc(x.email) : ' · <span style="color:var(--bad)">e-mail manquant</span>'}</div></td><td class="small">${esc(x.collab)}</td><td class="small">${x.manque === 'absent' ? 'Absent de votre espace' : x.manque === 'compte fiscal' ? 'Pas d’accès au compte fiscal' : '—'}</td><td>${pill(x)}</td>
       <td class="r" style="white-space:nowrap">${x.statut === 'raccorde' ? '<a href="#" class="tiny" data-ract="clear">Retirer du suivi</a>' : `<button class="btn sm${['a-demander', 'relancer'].includes(x.statut) ? ' primary' : ''}" data-ract="mail">${IC.mail} ${x.statut === 'relancer' ? 'Relancer' : 'Message'}</button> <a href="#" class="tiny" data-ract="${x.statut === 'ignore' ? 'unignore' : 'ignore'}">${x.statut === 'ignore' ? 'Rétablir' : 'Ignorer'}</a>`}</td></tr>`))}</table>` : `<div class="empty">${all.length ? 'Rien pour ce filtre.' : 'Tous les clients du fichier sont dans votre espace professionnel.'}</div>`}</div>`;
 }
 function raccordVue(all = clientsARaccorder()) {

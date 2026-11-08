@@ -213,6 +213,7 @@ Anciennement « Avis Collector ». Extension Chrome / Edge qui lit dans l'espace
 | 5.2 → 5.2.4 | Habilitations, clients à raccorder, espace mono-dossier |
 | 6.0 | **Valeur locative des locaux professionnels** : lecture GMBI, calcul au tarif, planchonnement reconstitué, cadastre IGN, statuts lisibles, brouillons, intégration à la liste de travail, visite guidée, outil Claude |
 | 6.1 | **Comptes impots.gouv** (n° d'abonné rattaché à chaque donnée, filtre « Compte », réglages, connecteur), **paiements d'impôts locaux lus à la source** (Compte fiscal › Synthèses), **onglet Dettes fiscales** (en retard / à venir / payé, AMR rapprochés par montant, une action par client), **reprise sans relecture** (cycle de 7 jours, attente réseau 10 min, reprise automatique après reconnexion, temps restant sur les dossiers à lire, bloc d'avancement dans l'application), habilitations comptées ligne par ligne et conservées par compte, base minimum sur le CA total du redevable + principal établissement (art. 1647 D), e-mails importés, conditions d'utilisation |
+| 6.1.1 | Fichier des dossiers : ligne d'en-tête trouvée sous un titre, champs entre guillemets, colonnes reconnues par priorité (« Nom du dossier » n'est plus pris pour le code), nombre de noms reconnus à l'import ; Clients à raccorder : « Nom inconnu » et bandeau explicatif au lieu d'un nom vide ; noms réduits à un SIREN ignorés. Site : accueil rééquilibré taxe foncière / CFE / dettes, vidéo taxe foncière |
 
 ---
 
