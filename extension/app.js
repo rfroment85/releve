@@ -368,8 +368,9 @@ function pageClient(arg) {
   <div class="badges">${N.filter((a) => a.n1 && !a.acompte).map((a) => `<span class="pill ${a.d.pct > 0.5 ? (a.hausse ? 'bad' : 'warn') : 'ok'}">${TAXE_LABEL[a.taxe]} ${esc(a.commune || '')} : ${pcv(a.d.pct)}</span>`).join('')}
     ${[...new Set(N.map((a) => a.prel).filter(Boolean))].map((p) => p === 'NON' ? '<span class="pill acc">À payer par le client</span>' : p === 'MENSUEL' ? '<span class="pill">Mensualisé : rien à payer en plus</span>' : '<span class="pill ok">Prélevé à l’échéance</span>').join('')}
     ${detteDue ? `<span class="pill bad">${eur(detteDue)} de créances échues</span>` : dettes.length || A.data.dettes.some((x) => x.siren === siren) ? '<span class="pill ok">Aucune créance en retard</span>' : ''}${vlPillClient(siren)}</div>
-  ${tasks.length ? `<div class="card items" style="margin-bottom:16px">${tasks.map(itemHtml).join('')}</div>` : ''}
-  ${N.map((a) => `<div class="card av"><div class="hd"><div><h2 style="margin:0">${TAXE_LABEL[a.taxe]} ${a.annee}${a.acompte ? ' · acompte' : ''} · ${esc(a.commune || '')}</h2><div class="small muted">${esc(a.role || '')}${a.reference ? ' · réf. ' + esc(a.reference) : ''} · ${esc(a.paiement)}${a.dateLimite ? ' · date limite ' + esc(a.dateLimite) : ''}</div></div>
+  ${(() => { const sec = [tasks.length ? ['#actions', 'Actions'] : null, N.length ? ['#avis', 'Avis ' + A.c.annee] : null, (A.data.biens || []).some((r) => r.siren === siren) ? ['#vl', 'Valeur locative'] : null, N.some((a) => a.cfe) ? ['#cfe', 'Contrôle CFE'] : null, ['#notes', 'Notes'], ['#historique', 'Tous les avis'], amrs.length || dettes.length ? ['#dettes', 'Dettes'] : null].filter(Boolean); return sec.length > 3 ? `<nav class="subnav" aria-label="Sections de la fiche">${sec.map(([h, t]) => `<a href="${h}" data-ancre="${h}">${t}</a>`).join('')}</nav>` : ''; })()}
+  ${tasks.length ? `<div class="card items" id="actions" style="margin-bottom:16px">${tasks.map(itemHtml).join('')}</div>` : ''}
+  ${N.map((a, i) => `<div class="card av"${i === 0 ? ' id="avis"' : ''}><div class="hd"><div><h2 style="margin:0">${TAXE_LABEL[a.taxe]} ${a.annee}${a.acompte ? ' · acompte' : ''} · ${esc(a.commune || '')}</h2><div class="small muted">${esc(a.role || '')}${a.reference ? ' · réf. ' + esc(a.reference) : ''} · ${esc(a.paiement)}${a.dateLimite ? ' · date limite ' + esc(a.dateLimite) : ''}</div></div>
     <div class="m"><b class="num">${eur(a.m)}</b>${a.n1 ? `<span class="small muted num">${eur(a.n1.m)} en ${A.c.anneeN1} · <span class="${a.d.delta > 0.5 ? 'up' : 'dn'}">${sgn(a.d.delta)} (${pcv(a.d.pct)})</span></span>` : ''}</div></div>
     ${decompBlock(a)}${lignesTable(a)}
     <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">${a.hasPdf ? `<button class="btn sm" data-pdf="${esc(a.id)}">${IC.doc} Avis ${a.annee}</button>` : ''}${a.n1 && a.n1.hasPdf ? `<button class="btn sm" data-pdf="${esc(a.n1.id)}">${IC.doc} Avis ${a.n1.annee}</button>` : ''}<button class="btn sm" data-mail="${esc(a.id)}">${IC.mail} Message sur cet avis</button></div></div>`).join('')}
@@ -377,21 +378,21 @@ function pageClient(arg) {
   ${vlClientBlock(siren)}
   ${histHtml}
   ${notesBlock(siren)}
-  <div class="card av"><h3>Tous les avis sur ce poste</h3><table class="t"><thead><tr><th>Année</th><th>Impôt</th><th>Commune</th><th>Rôle / type</th><th class="r">Montant</th><th>Paiement</th><th></th></tr></thead><tbody>
+  <div class="card av" id="historique"><h3>Tous les avis sur ce poste</h3><table class="t"><thead><tr><th>Année</th><th>Impôt</th><th>Commune</th><th>Rôle / type</th><th class="r">Montant</th><th>Paiement</th><th></th></tr></thead><tbody>
   ${all.sort((a, b) => b.annee.localeCompare(a.annee) || a.taxe.localeCompare(b.taxe)).map((a) => `<tr><td>${esc(a.annee)}</td><td>${TAXE_LABEL[a.taxe]}${a.acompte ? ' (acompte)' : ''}</td><td>${esc(a.commune || '')}</td><td class="small">${esc(a.role || a.type || '')}</td><td class="r num">${eur(num(a.infos && a.infos.montantImpot) || a.montant)}</td><td class="small">${esc(PAIEMENT[a.infos && a.infos.prelevement] || '')}</td><td class="r">${a.hasPdf ? `<button class="btn ghost sm" data-pdf="${esc(a.id)}">PDF</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
-  ${amrs.length ? `<div class="card av"><h3>Documents à payer (Payer › Dette fiscale)</h3><p class="small muted" style="margin:0 0 8px">Avis de mise en recouvrement : pénalités, majorations ou rappels. Leur nature s’affiche sur le site, à l’étape suivante du paiement.</p><table class="t"><thead><tr><th>AMR n°</th><th>SIRET</th><th class="r">Montant</th></tr></thead><tbody>${amrs.map((r) => `<tr><td>${esc(r.amr)}</td><td>${esc(r.siret)}</td><td class="r num up">${eur2(r.montant)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-  ${dettes.length ? `<div class="card av"><h3>Dettes fiscales (Compte fiscal › Synthèses › Dettes fiscales)</h3><table class="t"><thead><tr><th>Année</th><th>Impôt</th><th>Commune</th><th>Référence</th><th>Date limite</th><th class="r">Montant dû</th><th class="r">Payé</th><th class="r">Solde</th></tr></thead><tbody>${dettes.map((r) => { const due = ACA.dkey(r.dateLimite) < today, small = r.solde > 0 && r.solde < A.c.seuilDette; return `<tr><td>${esc(r.annee)}</td><td>${esc(r.impot)}</td><td>${esc(r.commune)}</td><td class="small">${esc(r.reference)}</td><td>${esc(r.dateLimite)}${due ? '' : ' <span class="pill">à échoir</span>'}</td><td class="r num">${eur2(r.montantDu)}</td><td class="r num">${r.paiementMontant ? eur2(num(r.paiementMontant)) : ''}</td><td class="r num ${r.solde >= A.c.seuilDette && due ? 'up' : ''}">${eur2(r.solde)}${small ? ' <span class="pill" title="Sous le seuil des réglages : pas d’action proposée">reliquat</span>' : ''}</td></tr>`; }).join('')}</tbody></table></div>` : ''}`;
+  ${amrs.length ? `<div class="card av" id="dettes"><h3>Documents à payer (Payer › Dette fiscale)</h3><p class="small muted" style="margin:0 0 8px">Avis de mise en recouvrement : pénalités, majorations ou rappels. Leur nature s’affiche sur le site, à l’étape suivante du paiement.</p><table class="t"><thead><tr><th>AMR n°</th><th>SIRET</th><th class="r">Montant</th></tr></thead><tbody>${amrs.map((r) => `<tr><td>${esc(r.amr)}</td><td>${esc(r.siret)}</td><td class="r num up">${eur2(r.montant)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+  ${dettes.length ? `<div class="card av"${amrs.length ? '' : ' id="dettes"'}><h3>Dettes fiscales (Compte fiscal › Synthèses › Dettes fiscales)</h3><table class="t"><thead><tr><th>Année</th><th>Impôt</th><th>Commune</th><th>Référence</th><th>Date limite</th><th class="r">Montant dû</th><th class="r">Payé</th><th class="r">Solde</th></tr></thead><tbody>${dettes.map((r) => { const due = ACA.dkey(r.dateLimite) < today, small = r.solde > 0 && r.solde < A.c.seuilDette; return `<tr><td>${esc(r.annee)}</td><td>${esc(r.impot)}</td><td>${esc(r.commune)}</td><td class="small">${esc(r.reference)}</td><td>${esc(r.dateLimite)}${due ? '' : ' <span class="pill">à échoir</span>'}</td><td class="r num">${eur2(r.montantDu)}</td><td class="r num">${r.paiementMontant ? eur2(num(r.paiementMontant)) : ''}</td><td class="r num ${r.solde >= A.c.seuilDette && due ? 'up' : ''}">${eur2(r.solde)}${small ? ' <span class="pill" title="Sous le seuil des réglages : pas d’action proposée">reliquat</span>' : ''}</td></tr>`; }).join('')}</tbody></table></div>` : ''}`;
 }
 function cfeBlock(N) {
   const l = N.filter((a) => a.cfe);
   if (!l.length) return '';
-  return `<div class="card av"><h3>Contrôle de la CFE (base minimum, création)</h3><table class="t"><thead><tr><th>Avis</th><th>Base minimum</th><th class="r">CA ${l[0].cfe.ref}</th><th>Tranche</th><th class="r">Plafond légal</th><th>Constat</th></tr></thead><tbody>
+  return `<div class="card av" id="cfe"><h3>Contrôle de la CFE (base minimum, création)</h3><table class="t"><thead><tr><th>Avis</th><th>Base minimum</th><th class="r">CA ${l[0].cfe.ref}</th><th>Tranche</th><th class="r">Plafond légal</th><th>Constat</th></tr></thead><tbody>
   ${l.map((a) => { const c = a.cfe; const st = c.anomalies.length ? `<span class="cst bad">${esc(c.anomalies[0].texte)}</span>` : c.infos.length ? `<span class="small muted">${esc(c.infos.join(' '))}</span>` : c.bm && c.plafond ? '<span class="cst ok">Conforme au barème</span>' : !c.bm ? '<span class="small muted">Imposition sur la valeur locative</span>' : ''; return `<tr><td style="white-space:nowrap">CFE ${a.annee}<div class="tiny muted">${esc(a.commune || '')}</div></td><td class="num">${c.bm ? eur(c.bmM) : 'non'}</td><td class="r num">${c.caRef !== null ? eur(c.caRef) : '<span class="muted">non importé</span>'}</td><td class="small" style="white-space:nowrap">${esc((c.tranche || '').replace(/^CA de /, '').replace(/^CA /, ''))}</td><td class="r num">${c.plafond ? eur(c.plafond) : ''}</td><td style="white-space:normal">${st}</td></tr>`; }).join('')}</tbody></table>
   ${l.every((a) => a.cfe.caRef === null) ? '<p class="small muted" style="margin:8px 0 0">Importez les chiffres d’affaires dans <a href="#reglages">Réglages</a> pour contrôler la base minimum.</p>' : ''}</div>`;
 }
 function notesBlock(siren) {
   const notes = (A.data.cnotes[siren] || []).slice().sort((a, b) => b.at - a.at);
-  return `<div class="card av"><h3>Notes</h3>${notes.map((n, i) => `<div class="cnote"><span class="tiny muted">${new Date(n.at).toLocaleDateString('fr-FR')}</span> ${esc(n.text)} <a href="#" class="tiny" data-delnote="${n.at}">supprimer</a></div>`).join('') || '<p class="small muted" style="margin:0 0 8px">Aucune note.</p>'}
+  return `<div class="card av" id="notes"><h3>Notes</h3>${notes.map((n, i) => `<div class="cnote"><span class="tiny muted">${new Date(n.at).toLocaleDateString('fr-FR')}</span> ${esc(n.text)} <a href="#" class="tiny" data-delnote="${n.at}">supprimer</a></div>`).join('') || '<p class="small muted" style="margin:0 0 8px">Aucune note.</p>'}
   <div style="display:flex;gap:8px;margin-top:8px"><input id="cnoteIn" placeholder="Ajouter une note (appel, accord du client, pièce reçue…)" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 10px"><button class="btn sm" id="cnoteOk">Ajouter</button></div></div>`;
 }
 async function saveCnotes(siren, list) {
@@ -403,6 +404,7 @@ function bindClient(arg) {
   bindTraiter();
   if (sub === 'message') setTimeout(() => { const b = $('#mailMain'); if (b) b.click(); }, 50);
   if (sub === 'vl') setTimeout(() => { const e = $('#vl'); if (e) e.scrollIntoView({ behavior: calme() ? 'auto' : 'smooth', block: 'start' }); }, 50);
+  bindAncres();
   bindVl(siren);
   const os = $('#onSite'); if (os) os.onclick = () => openOnSite(siren, 'accueil');
   const ci = $('#cnoteIn'), co = $('#cnoteOk');
@@ -627,18 +629,19 @@ function pageReglages() {
   const collabs = [...new Set(Object.values(c).map((v) => v.collaborateur).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
   return `<div class="ph"><div><h1>Réglages</h1><div class="sub">Enregistrés sur ce poste uniquement</div></div></div>
   <div class="form">
-    <div class="card"><label class="f">Fichier des dossiers du cabinet</label>
+    <nav class="subnav" aria-label="Sections des réglages">${[['#rDossiers', 'Dossiers'], ['#rCa', 'Chiffres d’affaires'], ['#rPortefeuille', 'Mon portefeuille'], ['#rSeuils', 'Seuils'], ['#rVl', 'Valeur locative'], ['#mcpCard', 'Claude'], ['#rAlertes', 'Alertes'], ['#saveCard', 'Sauvegarde'], ['#rDonnees', 'Données']].map(([h, t]) => `<a href="${h}" data-ancre="${h}">${t}</a>`).join('')}</nav>
+    <div class="card" id="rDossiers"><label class="f">Fichier des dossiers du cabinet</label>
       <div class="help">Facultatif. Un export CSV ou Excel de votre logiciel avec au moins le SIREN, et si possible le nom du client, le code dossier, le collaborateur et l’e-mail. Il sert aussi à repérer les clients absents de votre espace (Habilitations › Clients à raccorder). Les en-têtes sont reconnus automatiquement (séparateur ; , ou tabulation).</div>
       <div class="inl"><input type="file" id="fCorr" accept=".csv,.txt,.xlsx,text/csv"><span class="small ${nC ? '' : 'muted'}">${nC ? `${plural(nC, 'dossier')} importé${nC > 1 ? 's' : ''}${collabs.length ? ` · ${plural(collabs.length, 'collaborateur')}` : ''}` : 'Aucun fichier importé'}</span>${nC ? '<button class="btn sm ghost" id="clrCorr">Retirer</button>' : ''}</div></div>
-    <div class="card"><label class="f">Chiffres d’affaires (contrôle de la base minimum de CFE)</label>
+    <div class="card" id="rCa"><label class="f">Chiffres d’affaires (contrôle de la base minimum de CFE)</label>
       <div class="help">Facultatif. Un fichier CSV ou Excel avec une ligne par exercice : SIREN, date de clôture, durée en mois, chiffre d’affaires HT (ou recettes) et, si possible, date de création. Pour la CFE ${ACA.anneeCampagne()}, l’exercice utile est celui clos en ${ACA.anneeCampagne() - 2}.</div>
       <div class="inl"><input type="file" id="fCa" accept=".csv,.txt,.xlsx,text/csv"><span class="small ${caCount() ? '' : 'muted'}">${caCount() ? `${plural(caCount(), 'client')} · ${plural(caRefCount(), 'exercice')} clos en ${ACA.anneeCampagne() - 2}` : 'Aucun fichier importé'}</span>${caCount() ? '<button class="btn sm ghost" id="clrCa">Retirer</button>' : ''}<a href="#" id="caModele" class="small">Télécharger un modèle</a></div></div>
-    <div class="card"><label class="f">Mon portefeuille</label>
+    <div class="card" id="rPortefeuille"><label class="f">Mon portefeuille</label>
       <div class="help">Pour travailler sur « Mon portefeuille » : choisissez votre nom (d’après le fichier des dossiers) et/ou collez la liste de vos SIREN.</div>
       <div class="inl" style="margin-bottom:10px"><span>Je suis</span><select id="moi" style="max-width:260px"><option value="">—</option>${collabs.map((x) => `<option ${x === S.moi ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>${!collabs.length ? '<span class="tiny muted">importez d’abord le fichier des dossiers</span>' : ''}</div>
       <textarea id="port" placeholder="SIREN ou SIRET, un par ligne ou séparés par des espaces">${esc((S.portefeuille || []).join('\n'))}</textarea>
       <div class="inl" style="margin-top:8px"><button class="btn sm" id="savePort">Enregistrer le portefeuille</button><span class="small muted">${plural(scopeSirens().length, 'dossier')} dans mon portefeuille</span></div></div>
-    <div class="card"><label class="f">Seuils d’alerte des hausses</label>
+    <div class="card" id="rSeuils"><label class="f">Seuils d’alerte des hausses</label>
       <div class="help">Une hausse entre dans la liste de travail si elle dépasse les deux seuils.</div>
       <div class="inl"><span>Au moins</span><input type="number" id="sPct" min="0" step="1" value="${S.seuilPct}"><span>% et</span><input type="number" id="sEur" min="0" step="10" value="${S.seuilEur}"><span>€</span><button class="btn sm" id="saveSeuil">Enregistrer</button></div></div>
     <div class="card"><label class="f">Créances</label>
@@ -646,7 +649,7 @@ function pageReglages() {
       <div class="inl"><span>Ignorer les soldes inférieurs à</span><input type="number" id="sDette" min="0" step="1" value="${S.seuilDette ?? 5}"><span>€</span><button class="btn sm" id="saveDette">Enregistrer</button></div>
       <label class="inl" style="margin-top:10px;font-weight:400"><input type="checkbox" id="amrOn" ${S.amr !== false ? 'checked' : ''}> Lire aussi les documents à payer de « Payer › Dette fiscale » (avis de mise en recouvrement : pénalités, rappels). Lecture seule, aucun paiement.</label>
 </div>
-    <div class="card"><label class="f">Valeur locative des locaux professionnels</label>
+    <div class="card" id="rVl"><label class="f">Valeur locative des locaux professionnels</label>
       <div class="help">Relève refait le calcul de la taxe foncière de chaque local professionnel au tarif officiel et repère les clients qui paient probablement trop. <a href="#valeur-locative/lexique">Comprendre les termes</a>.</div>
       <label class="inl" style="margin-top:6px;font-weight:400"><input type="checkbox" id="biensOn" ${S.biens !== false ? 'checked' : ''}> Lire les biens immobiliers de « Gérer mes biens immobiliers » à chaque mise à jour (surfaces, catégorie, parcelle de chaque local professionnel). Lecture seule, aucune déclaration.</label>
       <label class="inl" style="margin-top:6px;font-weight:400"><input type="checkbox" id="cadastreOn" ${S.cadastre !== false ? 'checked' : ''}> Vérifier au cadastre (IGN) la surface de la parcelle, l’emprise du bâti et la photo aérienne de chaque local. Seule la référence cadastrale (commune, section, numéro) est transmise à la Géoplateforme de l’IGN : jamais le nom du client, le SIREN ni l’adresse. Résultat gardé sur ce poste un an.</label></div>
@@ -656,7 +659,7 @@ function pageReglages() {
       <label class="inl" style="font-weight:400"><input type="checkbox" id="mcpOn" ${A.S.mcp ? 'checked' : ''}> Activer la connexion à Claude sur ce poste</label>
       <label class="inl" style="font-weight:400;margin-top:6px"><input type="checkbox" id="mcpAnon" ${A.S.mcpAnon ? 'checked' : ''}> Masquer les noms et SIREN des clients (Claude voit « Client 4F2A »)</label>
       <div class="small" id="mcpState" style="margin-top:8px"></div></div>
-    <div class="card"><label class="f">Alertes et bandeau</label>
+    <div class="card" id="rAlertes"><label class="f">Alertes et bandeau</label>
       <label class="inl" style="font-weight:400"><input type="checkbox" id="notifOn" ${A.S.notif !== false ? 'checked' : ''}> Me prévenir par une notification : échéance dans 7 jours et la veille, avis de solde de CFE attendus, fin d’une longue mise à jour</label>
       <label class="inl" style="font-weight:400;margin-top:6px"><input type="checkbox" id="bannerOn" ${A.S.banner !== false ? 'checked' : ''}> Afficher un bandeau sur impots.gouv quand le dossier consulté a des actions en attente</label></div>
     <div class="card"><label class="f">Signature des messages</label>
@@ -672,7 +675,7 @@ function pageReglages() {
       <div class="help">Enregistre dans un fichier ce qui ne peut pas être relu sur impots.gouv : actions faites ou reportées, notes, réglages, fichier des dossiers, chiffres d’affaires, réponses de Claude, suivi des demandes d’accès. À faire de temps en temps, et toujours avant de changer de poste ou de réinstaller l’extension.</div>
       <div class="help" id="saveInfo">${A.backupAt ? `Dernière sauvegarde : ${ago(A.backupAt)}` : 'Aucune sauvegarde pour l’instant.'}</div>
       <div class="inl"><button class="btn primary sm" id="bkSave">${IC.down} Sauvegarder mes données</button><button class="btn sm" id="bkLoad">Restaurer une sauvegarde…</button><input type="file" id="bkFile" accept=".json,application/json" hidden></div></div>
-    <div class="card"><label class="f">Données sur ce poste</label>
+    <div class="card" id="rDonnees"><label class="f">Données sur ce poste</label>
       <div class="help" id="usage">${plural(A.data.avis.length, 'avis', 'avis')} · ${plural(A.data.avis.filter((a) => a.hasPdf).length, 'PDF')} · ${plural(A.data.dettes.length, 'situation fiscale', 'situations fiscales')} · ${plural(A.data.runs.length, 'mise à jour', 'mises à jour')}</div>
       <div class="help">Version ${esc(chrome.runtime.getManifest().version)} · <a href="https://releveavis.netlify.app/mode-emploi.html" target="_blank">mode d’emploi</a></div>
       <div class="help">Tout est stocké dans le navigateur de ce poste, rien n’est envoyé à un serveur. Désinstaller l’extension efface ces données.</div>
@@ -681,7 +684,10 @@ function pageReglages() {
 }
 const caCount = () => Object.keys(A.data.ca || {}).length;
 const caRefCount = () => Object.values(A.data.ca || {}).filter((o) => (o.exos || []).some((e) => String(e.cloture).slice(-4) === String(ACA.anneeCampagne() - 2))).length;
+// Ancres internes (sous-navigation de la fiche et des réglages) : défilement sans toucher au hash, qui sert de route
+function bindAncres() { $$('[data-ancre]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); const e = $(a.dataset.ancre); if (e) { e.scrollIntoView({ behavior: calme() ? 'auto' : 'smooth', block: 'start' }); $$('.subnav a').forEach((x) => x.classList.toggle('on', x === a)); } }); }
 function bindReglages() {
+  bindAncres();
   $('#fCa').onchange = async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
     try {
