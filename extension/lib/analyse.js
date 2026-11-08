@@ -118,16 +118,32 @@ const ACA = (() => {
     const out = {};
     const get = (r) => out[r.siren] || (out[r.siren] = { siren: r.siren, nom: r.nom, collab: r.collab || '', retard: [], aVenir: [], payees: [], totalRetard: 0, totalAVenir: 0 });
     const libres = amr.map((x) => ({ ...x, pris: false }));
+    // Mois d'émission d'un AMR, lu dans son numéro quand il commence par AAAAMM (ex. 20260805165 : août 2026)
+    const moisAmr = (x) => { const m = String(x.amr || '').replace(/\D/g, '').match(/^(20\d{2})(0[1-9]|1[0-2])\d{3,}$/); return m ? m[1] + m[2] : ''; };
+    const moisDette = (r) => { const m = String(r.dateLimite || '').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? m[3] + m[2] : ''; };
+    const enRetard = [];
     for (const r of dettes) {
       const sc = get(r), dl = dkey(r.dateLimite), due = dl && dl < today;
       if (num(r.paiementMontant) > 0 && r.solde <= 0) { sc.payees.push({ impot: r.impot, annee: r.annee, commune: r.commune, reference: r.reference, montant: num(r.paiementMontant), date: r.paiementDate, nature: r.paiementNature, dette: r }); continue; }
       if (r.solde <= 0) continue;
       if (!due) { sc.aVenir.push({ impot: r.impot, annee: r.annee, commune: r.commune, reference: r.reference, dateLimite: r.dateLimite, montant: r.solde, jours: daysUntil(r.dateLimite), dette: r }); sc.totalAVenir += r.solde; continue; }
-      // AMR correspondant : même client, montant entre le solde et le solde majoré (10 % + intérêts), le plus proche
-      const cand = libres.filter((x) => x.siren === r.siren && !x.pris && x.montant >= r.solde - 1 && x.montant <= r.solde * 1.15 + 50).sort((x, y) => (x.montant - r.solde) - (y.montant - r.solde));
-      const a = cand[0]; if (a) a.pris = true;
-      const exigible = a ? a.montant : r.solde;
-      sc.retard.push({ impot: r.impot, annee: r.annee, commune: r.commune, reference: r.reference, dateLimite: r.dateLimite, jours: -(daysUntil(r.dateLimite) || 0), montant: r.solde, majoration: a ? Math.max(0, a.montant - r.solde) : 0, exigible, amr: a ? a.amr : '', amrRow: a || null, dette: r, petit: r.solde < seuilDette });
+      enRetard.push(r);
+    }
+    // Rapprochement dette échue ↔ avis de mise en recouvrement (même client) : montant entre le solde et le solde majoré (majoration de 5 % ou 10 %,
+    // intérêts, frais : au plus +15 % + 50 €), AMR émis au plus tôt le mois de l'échéance ; on retient d'abord les couples dont le taux est le plus proche de 5 % ou 10 %
+    const couples = [];
+    for (const r of enRetard) for (const x of libres) {
+      if (x.siren !== r.siren || x.montant < r.solde - 1 || x.montant > r.solde * 1.15 + 50) continue;
+      const ma = moisAmr(x), md = moisDette(r); if (ma && md && ma < md) continue;
+      const t = r.solde ? x.montant / r.solde - 1 : 0;
+      couples.push({ r, x, score: Math.min(Math.abs(t - 0.05), Math.abs(t - 0.10)) });
+    }
+    couples.sort((u, v) => u.score - v.score);
+    const amrDe = new Map();
+    for (const c of couples) if (!c.x.pris && !amrDe.has(c.r)) { c.x.pris = true; amrDe.set(c.r, c.x); }
+    for (const r of enRetard) {
+      const sc = get(r), a = amrDe.get(r) || null;
+      sc.retard.push({ impot: r.impot, annee: r.annee, commune: r.commune, reference: r.reference, dateLimite: r.dateLimite, jours: -(daysUntil(r.dateLimite) || 0), montant: r.solde, majoration: a ? Math.max(0, a.montant - r.solde) : 0, exigible: a ? a.montant : r.solde, amr: a ? a.amr : '', amrRow: a, dette: r, petit: r.solde < seuilDette });
     }
     for (const a of libres) {
       if (a.pris) continue;
@@ -251,7 +267,7 @@ const ACA = (() => {
       const total = lignes.reduce((t, l) => t + l.exigible, 0);
       if (total < seuilDette) continue;
       const plusAncienne = lignes.reduce((m, l) => (l.jours > m ? l.jours : m), 0);
-      const libs = lignes.map((l) => `${l.impot} ${l.annee}${l.commune ? ' ' + l.commune : ''} ${eur(l.exigible)}`);
+      const libs = lignes.map((l) => `${l.seul ? 'avis de mise en recouvrement' : l.impot + ' ' + l.annee}${l.commune ? ' ' + l.commune : ''} ${eur(l.exigible)}`);
       add({ id: `det:${sc.siren}`, cat: 'dette', siren: sc.siren, nom: sc.nom, collab: sc.collab, lieu: `${lignes.length > 1 ? plural(lignes.length, 'dette en retard', 'dettes en retard') : lignes[0].impot + ' ' + lignes[0].annee}${lignes.some((l) => l.amr) ? ' · mise en recouvrement' : ''}`,
         quoi: `${eur(total)} exigibles${lignes.some((l) => l.majoration > 0) ? ' (majorations comprises)' : ''} : ${libs.slice(0, 4).join(', ')}${libs.length > 4 ? '…' : ''}. ${lignes.some((l) => l.amr) ? 'Le service des impôts a émis un avis de mise en recouvrement : à régler sans attendre.' : 'Une majoration peut s’appliquer.'}`,
         montant: total, echeance: plusAncienne ? `Échue depuis ${plusAncienne} j` : 'Exigible', urgence: lignes.some((l) => l.amr) ? 9 : 8, action: 'mail-dette', dettes: lignes, dette: lignes[0].dette || null, amr: lignes[0].amrRow || null });

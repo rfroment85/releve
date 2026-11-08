@@ -349,3 +349,16 @@ body:has(.selbar) .toast { bottom: 84px; }
 .caetab { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--accent-bg); }
 .caetab-rows { display: flex; flex-direction: column; gap: 6px; } .caetab-rows .btn { align-self: flex-start; margin-top: 4px; }
 @media (prefers-reduced-motion: reduce) { .rb-ico svg, .page.anim .runblock, .page.anim .dsec { animation: none !important; } }
+/* Page Dettes fiscales */
+.drows { padding: 4px 0; }
+.drow { display: grid; grid-template-columns: minmax(0, 2.4fr) 150px 80px minmax(0, 1.8fr) 110px 230px; gap: 12px; align-items: center; padding: 11px 16px; border-bottom: 1px solid var(--line2); cursor: pointer; transition: background .15s; }
+.drow:last-child { border-bottom: 0; } .drow:not(.dhead):hover { background: #FAFAF7; } .drow.open { background: #FFFBFA; }
+.drow > span:first-child { display: flex; flex-direction: column; min-width: 0; } .drow > span:first-child b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drow > .r { text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+.drow .up { color: var(--bad); } .drow .ok { color: var(--ok); }
+.drow.dhead { cursor: default; font-size: 12px; color: var(--ink3); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding-top: 8px; padding-bottom: 8px; }
+.dacts { display: flex; gap: 6px; justify-content: flex-end; } .dtog svg { transition: transform .2s var(--ease-out); transform: rotate(90deg); } .drow.open .dtog svg { transform: rotate(-90deg); }
+.ddet { grid-column: 1 / -1; padding: 6px 0 4px; cursor: default; }
+.page.anim .drow:not(.dhead) { animation: ac-pagein .3s var(--ease-out) both; } .page.anim .drow:nth-child(2) { animation-delay: .03s; } .page.anim .drow:nth-child(3) { animation-delay: .06s; } .page.anim .drow:nth-child(4) { animation-delay: .09s; } .page.anim .drow:nth-child(n+5) { animation-delay: .12s; }
+@media (max-width: 1100px) { .drow { grid-template-columns: minmax(0, 1.6fr) 140px minmax(0, 1fr) 230px; } .drow > span:nth-child(3), .drow > span:nth-child(5) { display: none; } }
+@media (prefers-reduced-motion: reduce) { .page.anim .drow { animation: none !important; } }

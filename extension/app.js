@@ -92,7 +92,7 @@ const { IMPOT_LIB, detteCtx, amrCtx, mailItem, libColl, listeEt, mailDraft, sect
 // Coquille : navigation et barre du haut
 // ======================================================================
 const ROUTES = [
-  { k: 'a-traiter', t: 'À traiter', i: 'list' }, { k: 'demander', t: 'Demander', i: 'chat' }, { k: 'clients', t: 'Clients', i: 'users' }, { k: 'valeur-locative', t: 'Valeur locative', i: 'ruler' }, { k: 'habilitations', t: 'Habilitations', i: 'shield' }, { k: 'collectivites', t: 'Collectivités', i: 'building' },
+  { k: 'a-traiter', t: 'À traiter', i: 'list' }, { k: 'demander', t: 'Demander', i: 'chat' }, { k: 'clients', t: 'Clients', i: 'users' }, { k: 'dettes', t: 'Dettes fiscales', i: 'euro' }, { k: 'valeur-locative', t: 'Valeur locative', i: 'ruler' }, { k: 'habilitations', t: 'Habilitations', i: 'shield' }, { k: 'collectivites', t: 'Collectivités', i: 'building' },
   { k: 'calendrier', t: 'Calendrier', i: 'cal' }, { k: 'exports', t: 'Exports', i: 'down' }, { k: 'reglages', t: 'Réglages', i: 'gear' },
 ];
 const route = () => { const h = decodeURIComponent(location.hash.slice(1)) || 'a-traiter'; const [p, ...r] = h.split('/'); return { p, arg: r.join('/') }; };
@@ -100,9 +100,10 @@ function savedMinutes() { return A.data.avis.filter((a) => a.hasPdf).length * 2 
 function shell() {
   const { p } = route(), open = openTasks().length;
   const nTrop = ((A.data.vlResume && A.data.vlResume.locaux) || []).filter((l) => l.statut === 'TROP' && (!scopeMoi() || scopeSirens().includes(l.siren))).length;
+  const nRetard = Object.values(A.c.situation || {}).filter((x) => x.retard.length).length;
   const m = savedMinutes(), h = Math.floor(m / 60);
   $('#nav').innerHTML = `<div class="brand"><span class="logo">${IC.logo}</span>Relève</div>
-    ${ROUTES.map((r) => `<a href="#${r.k}" class="${p === r.k || (p === 'client' && r.k === 'clients') ? 'on' : ''}">${IC[r.i]} ${r.t}${r.k === 'a-traiter' && open ? `<span class="cnt">${open}</span>` : ''}${r.k === 'valeur-locative' && nTrop ? `<span class="cnt bad" title="${nTrop} local${nTrop > 1 ? 'aux' : ''} : trop payé probable">${nTrop}</span>` : ''}</a>`).join('')}
+    ${ROUTES.map((r) => `<a href="#${r.k}" class="${p === r.k || (p === 'client' && r.k === 'clients') ? 'on' : ''}">${IC[r.i]} ${r.t}${r.k === 'a-traiter' && open ? `<span class="cnt">${open}</span>` : ''}${r.k === 'valeur-locative' && nTrop ? `<span class="cnt bad" title="${nTrop} local${nTrop > 1 ? 'aux' : ''} : trop payé probable">${nTrop}</span>` : ''}${r.k === 'dettes' && nRetard ? `<span class="cnt bad" title="${nRetard} client${nRetard > 1 ? 's' : ''} avec des sommes en retard">${nRetard}</span>` : ''}</a>`).join('')}
     <div class="sp"></div>
     ${m >= 30 ? `<div class="saved"><span class="tiny muted">Temps économisé cette campagne</span><b class="num">${h ? h + ' h' : m + ' min'}</b><span class="tiny muted">Estimation : 2 min par avis lu et classé à la main</span></div>` : ''}
     ${Object.values(A.data.tasks).filter((t) => t.status || t.note).length >= 10 && (!A.backupAt || Date.now() - A.backupAt > 30 * 864e5) ? `<a class="bknudge" href="#reglages">${IC.down} Pensez à sauvegarder vos données</a>` : ''}
@@ -140,7 +141,7 @@ function page() {
   // Les entrées en cascade ne jouent qu'à l'arrivée sur un écran, pas à chaque rafraîchissement (recherche, case cochée…)
   const cle = p + '/' + (arg || ''); el.classList.toggle('anim', cle !== A.routeKey); A.routeKey = cle;
   if (!A.data.avis.length && !['reglages', 'bienvenue'].includes(p)) { el.innerHTML = pageVide(); return; }
-  const fn = { 'a-traiter': pageTraiter, clients: pageClients, client: pageClient, collectivites: pageCollectivites, calendrier: pageCalendrier, exports: pageExports, demander: pageDemander, habilitations: pageHabil, 'valeur-locative': pageValeurLocative, reglages: pageReglages, bienvenue: pageBienvenue, synthese: pageSynthese }[p] || pageTraiter;
+  const fn = { 'a-traiter': pageTraiter, clients: pageClients, client: pageClient, dettes: pageDettes, collectivites: pageCollectivites, calendrier: pageCalendrier, exports: pageExports, demander: pageDemander, habilitations: pageHabil, 'valeur-locative': pageValeurLocative, reglages: pageReglages, bienvenue: pageBienvenue, synthese: pageSynthese }[p] || pageTraiter;
   el.innerHTML = runBlock() + fn(arg);
   bindPage(p, arg);
 }
@@ -340,6 +341,79 @@ function bindClients() {
 }
 
 // ======================================================================
+// Dettes fiscales (tout le portefeuille)
+// ======================================================================
+// Une ligne de dette en retard : impôt, référence (et avis de mise en recouvrement rapproché), échéance, montant d'origine, majoration, exigible
+function detteLigneHtml(l) {
+  return `<tr><td>${l.seul ? '<b>Avis de mise en recouvrement</b><div class="tiny muted">pénalité, rappel ou majoration</div>' : `<b>${esc(l.impot)}</b> ${esc(l.annee)}${l.commune ? `<div class="tiny muted">${esc(l.commune)}</div>` : ''}`}</td><td class="small">${esc(l.reference || '')}${l.amr && !l.seul ? `<div class="tiny up">Avis de mise en recouvrement n° ${esc(l.amr)}</div>` : ''}</td><td>${l.dateLimite ? `${esc(l.dateLimite)}<div class="tiny muted">${l.jours ? `il y a ${l.jours} j` : ''}</div>` : '<span class="tiny muted">exigible</span>'}</td><td class="r num">${eur2(l.montant)}</td><td class="r num">${l.majoration > 0 ? '<span class="up">+ ' + eur2(l.majoration) + '</span>' : l.seul ? '<span class="tiny muted">comprise</span>' : l.amr ? '—' : '<span class="tiny muted">pas encore connue</span>'}</td><td class="r num"><b class="up">${eur2(l.exigible)}</b></td></tr>`;
+}
+A.df = { vue: 'retard', collab: '', impot: '' }; A.dOpen = new Set();
+const impotDe = (l) => (l.seul ? 'AMR' : String(l.impot || '').toUpperCase());
+function dettesVue() {
+  const corr = A.S.correspondance || {}, f = A.df;
+  const collabDe = (sc) => (corr[sc.siren] || {}).collaborateur || sc.collab || '';
+  const toutes = Object.values(A.c.situation || {}).filter((sc) => sc.retard.length || sc.aVenir.length || sc.payees.length)
+    .map((sc) => ({ ...sc, collab: collabDe(sc), code: (corr[sc.siren] || {}).code || '', maj: sc.retard.reduce((t, l) => t + (l.majoration || 0), 0), ancienne: sc.retard.reduce((m, l) => Math.max(m, l.jours || 0), 0), prochaine: sc.aVenir.map((l) => l.dateLimite).sort((x, y) => ACA.dkey(x).localeCompare(ACA.dkey(y)))[0] || '' }));
+  const base = toutes.filter((sc) => match(sc.nom, sc.siren, sc.collab, sc.code) && (!f.collab || sc.collab === f.collab) && (!f.impot || [...sc.retard, ...sc.aVenir].some((l) => impotDe(l) === f.impot)));
+  const rows = base.filter((sc) => (f.vue === 'retard' ? sc.retard.length : f.vue === 'avenir' ? sc.aVenir.length : true))
+    .sort((x, y) => (f.vue === 'avenir' ? ACA.dkey(x.prochaine).localeCompare(ACA.dkey(y.prochaine)) || y.totalAVenir - x.totalAVenir : y.totalRetard - x.totalRetard || y.totalAVenir - x.totalAVenir));
+  return { toutes, base, rows };
+}
+function pageDettes() {
+  const { toutes, base, rows } = dettesVue(), f = A.df;
+  const lus = A.data.dettes.length, derniere = A.data.dettes.reduce((m, d) => Math.max(m, d.at || 0), 0);
+  if (!lus) return `<div class="ph"><div><h1>Dettes fiscales</h1><div class="sub">Rien n’a encore été lu</div></div></div><div class="card empty">La situation de la dette fiscale de chaque dossier est lue à chaque mise à jour des clients (Compte fiscal › Synthèses › Dettes fiscales, et Payer › Dette fiscale pour les avis de mise en recouvrement). Lancez une mise à jour depuis le volet Relève.</div>`;
+  const retard = base.filter((x) => x.retard.length), totR = retard.reduce((t, x) => t + x.totalRetard, 0), totMaj = retard.reduce((t, x) => t + x.maj, 0);
+  const nAmr = retard.reduce((t, x) => t + x.retard.filter((l) => l.amr).length, 0), avenir = base.filter((x) => x.aVenir.length), totV = avenir.reduce((t, x) => t + x.totalAVenir, 0);
+  const prochaine = avenir.map((x) => x.prochaine).filter(Boolean).sort((a, b) => ACA.dkey(a).localeCompare(ACA.dkey(b)))[0];
+  const collabs = [...new Set(toutes.map((x) => x.collab).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const impots = [...new Set(toutes.flatMap((x) => [...x.retard, ...x.aVenir].map(impotDe)))].sort();
+  const tuile = (k, ton, lib, val, sous) => `<button class="kpi card vlt ${ton}${f.vue === k ? ' on' : ''}" data-dvue="${k}"><span class="tiny muted">${lib}</span><b class="num">${val}</b><span class="tiny muted">${sous}</span></button>`;
+  const pills = (sc) => { const c = {}; for (const l of sc.retard) c[impotDe(l)] = (c[impotDe(l)] || 0) + 1; return Object.entries(c).map(([k, n]) => `<span class="pill bad">${k === 'AMR' ? 'Mise en recouvrement' : esc(k)}${n > 1 ? ' ×' + n : ''}</span>`).join(' '); };
+  const tache = (sc) => A.c.taches.find((t) => t.id === 'det:' + sc.siren && !t.done);
+  return `<div class="ph"><div><h1>Dettes fiscales</h1><div class="sub">Sommes non réglées et avis de mise en recouvrement de vos clients · lu ${ago(derniere)}${lus ? ` sur ${plural(lus, 'dossier')}` : ''}</div></div>
+    <div class="r"><button class="btn" id="dXlsx">${IC.down} Exporter (Excel)</button></div></div>
+  <div class="kpis vlkpis" style="margin-bottom:14px">
+    ${tuile('retard', 'bad', 'En retard', eur(totR), `${plural(retard.length, 'client')}${totMaj ? ` · dont ${eur(totMaj)} de majorations constatées` : ''}`)}
+    ${tuile('avenir', 'acc', 'À venir', eur(totV), `${plural(avenir.length, 'client')}${prochaine ? ` · prochaine échéance le ${prochaine}` : ''}`)}
+    ${tuile('tous', '', 'Tous les dossiers suivis', plural(base.length, 'client'), `${nAmr ? plural(nAmr, 'avis de mise en recouvrement', 'avis de mise en recouvrement') + ' rapprochés · ' : ''}${plural(lus, 'situation lue', 'situations lues')}`)}
+  </div>
+  <p class="small muted" style="margin:-4px 0 12px">Une dette échue reprise par un avis de mise en recouvrement n’est comptée qu’une fois, majoration comprise. Le rapprochement se fait sur le montant et la date : il est indicatif, à confirmer sur impots.gouv.</p>
+  <div class="card filtres">
+    <label class="flt"><span>Collaborateur</span><select id="dCollab"><option value="">Tous</option>${collabs.map((c) => `<option${f.collab === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+    <label class="flt"><span>Impôt</span><select id="dImpot"><option value="">Tous</option>${impots.map((c) => `<option value="${esc(c)}"${f.impot === c ? ' selected' : ''}>${c === 'AMR' ? 'Avis de mise en recouvrement' : esc(c)}</option>`).join('')}</select></label>
+    <span class="small muted" style="margin-left:auto">${plural(rows.length, 'client')} · recherche en haut de page</span></div>
+  <div class="card drows">${rows.length ? `<div class="drow dhead"><span>Client</span><span class="r">En retard</span><span>Depuis</span><span>Impôts en retard</span><span class="r">À venir</span><span></span></div>` + rows.map((sc) => { const t = tache(sc), open = A.dOpen.has(sc.siren); return `<div class="drow${open ? ' open' : ''}" data-dsiren="${sc.siren}">
+      <span><b>${esc(sc.nom)}</b><span class="tiny muted">${fmtSiren(sc.siren)}${sc.code ? ' · ' + esc(sc.code) : ''}${sc.collab ? ' · ' + esc(sc.collab) : ''}</span></span>
+      <span class="r num">${sc.totalRetard ? `<b class="up">${eur(sc.totalRetard)}</b>${sc.maj ? `<span class="tiny muted">dont ${eur(sc.maj)} de majorations</span>` : ''}` : '<span class="muted">—</span>'}</span>
+      <span class="small">${sc.ancienne ? `${sc.ancienne} jours` : sc.retard.length ? 'exigible' : ''}</span>
+      <span>${pills(sc) || '<span class="small ok">rien en retard</span>'}</span>
+      <span class="r num small">${sc.totalAVenir ? `${eur(sc.totalAVenir)}<span class="tiny muted">${esc(sc.prochaine)}</span>` : '<span class="muted">—</span>'}</span>
+      <span class="dacts">${t ? `<button class="btn sm primary" data-drelance="${sc.siren}">${IC.mail} Relancer</button>` : ''}<a class="btn sm" href="#client/${sc.siren}/dettes">Fiche</a><button class="btn sm ghost dtog" data-dtog="${sc.siren}" title="Détail" aria-expanded="${open}">${IC.chevron}</button></span>
+      ${open ? `<div class="ddet">${sc.retard.length ? `<table class="t"><thead><tr><th>Impôt</th><th>Référence</th><th>Échéance</th><th class="r">Dû à l’origine</th><th class="r">Majoration</th><th class="r">Exigible</th></tr></thead><tbody>${sc.retard.map(detteLigneHtml).join('')}</tbody></table>` : ''}${sc.aVenir.length ? `<div class="small" style="margin-top:8px"><b>À venir :</b> ${sc.aVenir.map((l) => `${esc(l.impot)} ${esc(l.annee)} ${eur2(l.montant)} le ${esc(l.dateLimite)}`).join(' · ')}</div>` : ''}${sc.payees.length ? `<div class="small ok" style="margin-top:6px"><b>Payé :</b> ${sc.payees.map((l) => `${esc(l.impot)} ${esc(l.annee)} ${eur2(l.montant)}${l.date ? ' le ' + esc(l.date) : ''}`).join(' · ')}</div>` : ''}</div>` : ''}
+    </div>`; }).join('') : `<div class="empty">${f.vue === 'retard' ? 'Aucune somme en retard avec ces filtres. 🎉' : 'Aucun client avec ces filtres.'}</div>`}</div>`;
+}
+function bindDettes() {
+  $$('[data-dvue]').forEach((b) => b.onclick = () => { A.df.vue = b.dataset.dvue; page(); });
+  const c = $('#dCollab'); if (c) c.onchange = () => { A.df.collab = c.value; page(); };
+  const i = $('#dImpot'); if (i) i.onchange = () => { A.df.impot = i.value; page(); };
+  $$('[data-dtog]').forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); const s = b.dataset.dtog; A.dOpen.has(s) ? A.dOpen.delete(s) : A.dOpen.add(s); page(); });
+  $$('.drow[data-dsiren]').forEach((r) => r.onclick = (ev) => { if (ev.target.closest('a, button, .ddet')) return; const s = r.dataset.dsiren; A.dOpen.has(s) ? A.dOpen.delete(s) : A.dOpen.add(s); page(); });
+  $$('[data-drelance]').forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); const t = A.c.taches.find((x) => x.id === 'det:' + b.dataset.drelance); if (t) runAction(t); });
+  const x = $('#dXlsx'); if (x) x.onclick = () => {
+    const { rows } = dettesVue();
+    const cols = [{ h: 'Client', w: 34, style: () => 6 }, { h: 'SIREN', w: 12 }, { h: 'Code', w: 10 }, { h: 'Collaborateur', w: 16 }, { h: 'Impôt', w: 14 }, { h: 'Année', w: 8 }, { h: 'Référence', w: 22 }, { h: 'Échéance', w: 12 }, { h: 'Dû à l’origine', w: 14, t: 'eur' }, { h: 'Majoration constatée', w: 14, t: 'eur' }, { h: 'Exigible', w: 14, t: 'eur' }, { h: 'Avis de mise en recouvrement', w: 18 }];
+    const wb = buildWorkbook([
+      { name: 'En retard', title: 'Dettes fiscales en retard', subtitle: `${scopeMoi() ? 'Mon portefeuille' : 'Tout le cabinet'} · extrait le ${new Date().toLocaleDateString('fr-FR')} · Relève (rapprochement des avis de mise en recouvrement indicatif)`, tab: true, cols,
+        rows: rows.flatMap((sc) => sc.retard.map((l) => [sc.nom, sc.siren, sc.code, sc.collab, l.seul ? 'Mise en recouvrement' : l.impot, l.annee, l.reference, l.dateLimite || 'exigible', l.montant, l.majoration || '', l.exigible, l.amr || ''])) },
+      { name: 'À venir', title: 'Échéances à venir', cols: [{ h: 'Client', w: 34, style: () => 6 }, { h: 'SIREN', w: 12 }, { h: 'Collaborateur', w: 16 }, { h: 'Impôt', w: 12 }, { h: 'Année', w: 8 }, { h: 'Référence', w: 26 }, { h: 'Échéance', w: 12 }, { h: 'Montant', w: 14, t: 'eur' }],
+        rows: rows.flatMap((sc) => sc.aVenir.map((l) => [sc.nom, sc.siren, sc.collab, l.impot, l.annee, l.reference, l.dateLimite, l.montant])) },
+    ]);
+    download(wb, `Releve_dettes_fiscales_${jourISO()}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('Classeur téléchargé');
+  };
+}
+
+// ======================================================================
 // Fiche client
 // ======================================================================
 const COL = { taux: 'var(--taux)', bases: 'var(--bases)', nouveaux: 'var(--neuf)', autres: '#B9B8B0' };
@@ -411,7 +485,7 @@ function dettesBlock(siren, situ) {
   const { retard, aVenir, payees, totalRetard, totalAVenir } = situ;
   const payTF = ((pay && pay.rows) || []).filter((r) => r.anneeLue === A.c.annee || r.periode === A.c.annee).sort((x, y) => ACA.dkey(y.datePaiement).localeCompare(ACA.dkey(x.datePaiement)));
   const phrase = [retard.length ? `<b class="up">${eur(totalRetard)} en retard</b> sur ${plural(retard.length, 'dette')} (${[...new Set(retard.map((l) => l.impot))].join(', ')})` : '<b class="ok">Aucune somme en retard</b>', aVenir.length ? `${eur(totalAVenir)} à venir (${aVenir.map((l) => `${l.impot} ${l.dateLimite}`).slice(0, 3).join(', ')}${aVenir.length > 3 ? '…' : ''})` : '', payTF.length ? `${plural(payTF.length, 'paiement d’impôt local', 'paiements d’impôts locaux')} en ${A.c.annee}` : ''].filter(Boolean).join(' · ');
-  const ligne = (l) => `<tr><td>${l.seul ? '<b>Avis de mise en recouvrement</b><div class="tiny muted">pénalité, rappel ou majoration</div>' : `<b>${esc(l.impot)}</b> ${esc(l.annee)}${l.commune ? `<div class="tiny muted">${esc(l.commune)}</div>` : ''}`}</td><td class="small">${esc(l.reference || '')}${l.amr && !l.seul ? `<div class="tiny up">Avis de mise en recouvrement n° ${esc(l.amr)}</div>` : ''}</td><td>${l.dateLimite ? `${esc(l.dateLimite)}<div class="tiny muted">${l.jours ? `il y a ${l.jours} j` : ''}</div>` : '<span class="tiny muted">exigible</span>'}</td><td class="r num">${eur2(l.montant)}</td><td class="r num">${l.majoration > 0 ? '<span class="up">+ ' + eur2(l.majoration) + '</span>' : l.seul ? '<span class="tiny muted">comprise</span>' : l.amr ? '—' : '<span class="tiny muted">pas encore connue</span>'}</td><td class="r num"><b class="up">${eur2(l.exigible)}</b></td></tr>`;
+  const ligne = detteLigneHtml;
   return `<div class="card av dettes" id="dettes"><div class="hd"><div><h3 style="margin:0">Dettes fiscales</h3><div class="small muted">Compte fiscal › Synthèses · lu ${lu ? ago(lu.at) : ago(pay.at)} · ${A.data.settings.amr !== false ? 'avis de mise en recouvrement rapprochés' : 'documents à payer non lus (réglages)'}</div></div><button class="btn sm" id="onSiteDettes" style="margin-left:auto">${IC.ext} Voir sur impots.gouv</button></div>
     <p class="dettes-phrase">${phrase}</p>
     ${retard.length ? `<div class="dsec bad"><div class="dsec-h"><span class="sw" style="background:#B42318"></span><b>En retard</b><span class="muted">${plural(retard.length, 'dette')} · ${eur(totalRetard)} exigibles${retard.some((l) => l.majoration > 0) ? ', majorations comprises' : ''}</span></div>
@@ -454,6 +528,7 @@ function bindClient(arg) {
   bindTraiter();
   if (sub === 'message') setTimeout(() => { const b = $('#mailMain'); if (b) b.click(); }, 50);
   if (sub === 'vl') setTimeout(() => { const e = $('#vl'); if (e) e.scrollIntoView({ behavior: calme() ? 'auto' : 'smooth', block: 'start' }); }, 50);
+  if (sub === 'dettes') setTimeout(() => { const e = $('#dettes'); if (e) e.scrollIntoView({ behavior: calme() ? 'auto' : 'smooth', block: 'start' }); }, 50);
   bindAncres();
   bindVl(siren);
   const os = $('#onSite'); if (os) os.onclick = () => openOnSite(siren, 'accueil');
@@ -1244,6 +1319,7 @@ async function restaurer(bk) {
 function bindPage(p, arg) {
   if (p === 'a-traiter' || !p) { bindTraiter(); animerBarre(); }
   if (p === 'clients') bindClients();
+  if (p === 'dettes') bindDettes();
   if (p === 'client') bindClient(arg);
   if (p === 'collectivites') bindCollectivites();
   if (p === 'reglages') bindReglages();
