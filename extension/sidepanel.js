@@ -64,6 +64,18 @@ async function check() {
     }
   } finally { V.checking = false; }
   render();
+  // Session expirée pendant une mise à jour, utilisateur reconnecté : la mise à jour repart d'elle-même (une seule fois par interruption)
+  if (V.run && !V.run.running && V.run.session && V.run.opts && V.page && !V.page.login && !V.page.expired && V.reprisePour !== V.run.startedAt) {
+    V.reprisePour = V.run.startedAt; toast('Reconnecté : la mise à jour reprend');
+    reprendre(V.run.opts);
+  }
+}
+async function reprendre(opts) {
+  if (!V.tab) return;
+  const page = await ping(); if (!page || page.login || page.expired || page.running) return;
+  await chrome.runtime.sendMessage({ type: 'ac:started', opts });
+  await toTab({ type: 'ac:start', opts });
+  V.showDone = true;
 }
 
 // ---- Vues ----
@@ -115,7 +127,7 @@ function viewReady(c) {
   <button class="btn primary big" id="go">${IC.refresh} Mettre à jour mes clients</button>
   <div class="cta-note">${n ? `${estimate(n)[0].toUpperCase() + estimate(n).slice(1)} pour ${plural(n, 'dossier')}. ` : ''}Vous pouvez travailler dans un autre onglet pendant ce temps.</div>
   ${first ? '' : '<div class="cta-note tiny">Mise à jour rapide : seules les pages susceptibles d’avoir changé sont relues. <a href="#" id="goFull">Tout relire</a></div>'}
-  ${V.run && V.run.error ? `<div class="errbox">La dernière mise à jour s’est arrêtée : ${esc(V.run.error)}${/Session/.test(V.run.error) ? '. Reconnectez-vous puis relancez : les avis déjà lus ne seront pas relus.' : ''}</div>` : ''}`;
+  ${V.run && V.run.error ? `<div class="errbox">La dernière mise à jour s’est arrêtée : ${esc(V.run.error)}${V.run.session ? '. Dès que vous êtes reconnecté dans l’onglet impots.gouv, elle repart d’elle-même là où elle s’est arrêtée.' : /Réseau/.test(V.run.error) ? '' : '. Relancez : les dossiers déjà lus ne seront pas relus.'}</div>` : ''}`;
 }
 
 function viewNoTab(c) {
@@ -133,22 +145,24 @@ function viewLogin(c) {
   return `${statusPills()}
   <div class="card hero">
     <h2>Connectez-vous à votre espace professionnel</h2>
-    <p>${V.page && V.page.expired ? 'Votre session impots.gouv a expiré.' : 'L’onglet impots.gouv est ouvert mais la session n’est pas active.'} Connectez-vous dans l’onglet impots.gouv, ce volet se met à jour tout seul.</p>
+    <p>${V.page && V.page.expired ? 'Votre session impots.gouv a expiré.' : 'L’onglet impots.gouv est ouvert mais la session n’est pas active.'} Connectez-vous dans l’onglet impots.gouv, ce volet se met à jour tout seul.${V.run && V.run.session && V.run.opts ? ' <b>La mise à jour interrompue reprendra automatiquement</b> là où elle s’est arrêtée.' : ''}</p>
   </div>
   <button class="btn big" id="showTab">${IC.ext} Aller sur l’onglet impots.gouv</button>
   ${summaryBlock(c)}`;
 }
 
 function viewRunning() {
-  const r = V.run, pct = r.total ? Math.round(r.done / r.total * 100) : 0;
-  const head = r.phase === 'liste' ? 'Lecture de la liste des dossiers' : `${r.done.toLocaleString('fr-FR')} / ${r.total.toLocaleString('fr-FR')} dossiers`;
+  const r = V.run, deja = r.dejaLus || 0, faits = r.faits || 0, aFaire = r.aFaire || 0, avance = Math.min(r.total || 0, deja + faits);
+  const pct = r.total ? Math.round(avance / r.total * 100) : 0;
+  const head = r.phase === 'liste' ? 'Lecture de la liste des dossiers' : r.phase === 'attente' ? 'Connexion interrompue' : `${avance.toLocaleString('fr-FR')} / ${(r.total || 0).toLocaleString('fr-FR')} dossiers`;
   return `${statusPills()}
   <div class="card prog">
-    <div class="small muted">Mise à jour en cours</div>
+    <div class="small muted">${r.phase === 'attente' ? 'Mise à jour en attente du réseau' : 'Mise à jour en cours'}</div>
     <div class="big num">${head}</div>
     <div class="bar"><i style="width:${r.phase === 'liste' ? (r.total ? r.done / r.total * 100 : 5) : pct}%"></i></div>
     <div class="lbl">${esc(r.label || '')}</div>
-    <div class="small muted" style="margin-top:6px">${r.eta ? `Encore ${dur(r.eta)} · ` : ''}${plural(r.nouveaux || 0, 'nouvel avis', 'nouveaux avis')} · vous pouvez fermer ce volet</div>
+    ${deja ? `<div class="small" style="margin-top:6px"><span class="pill ok">Reprise</span> ${deja.toLocaleString('fr-FR')} dossier${deja > 1 ? 's' : ''} déjà à jour, non relu${deja > 1 ? 's' : ''} · ${aFaire.toLocaleString('fr-FR')} à lire</div>` : ''}
+    <div class="small muted" style="margin-top:6px">${r.eta ? `Encore ${dur(r.eta)} · ` : aFaire && faits < 3 ? 'Estimation du temps restant dans un instant · ' : ''}${plural(r.nouveaux || 0, 'nouvel avis', 'nouveaux avis')} · vous pouvez fermer ce volet</div>
   </div>
   <div class="warnbox">Pendant la mise à jour, évitez de changer de dossier dans l’espace professionnel : le site ne suit qu’un dossier à la fois.</div>
   ${r.feed && r.feed.length ? `<div class="card feed"><h4>Repéré à l’instant</h4>${r.feed.map((f) => `<div class="it${V.vus && V.vus.has(f.title + f.sub) ? '' : ' new'}"><b>${esc(f.title)}</b><span>${esc(f.sub)}</span></div>`).join('')}</div>` : ''}
@@ -232,7 +246,7 @@ async function start(complet) {
   const mode = scopeMode();
   const list = V.list && V.list.list && V.list.list.length && Date.now() - V.list.at < 12 * 3600e3 ? V.list.list : null;
   const opts = { annee: ACA.anneeCampagne(), taxes: ['TF', 'CFE'], delay: V.settings.delai === 120 || !V.settings.delai ? 60 : V.settings.delai, complet: !!complet, dettes: true, amr: V.settings.amr !== false, biens: V.settings.biens !== false, scope: mode === 'moi' ? scopeSirens() : null, dossiers: list };
-  await chrome.runtime.sendMessage({ type: 'ac:started' });
+  await chrome.runtime.sendMessage({ type: 'ac:started', opts });
   await toTab({ type: 'ac:start', opts });
   V.showDone = true;
 }

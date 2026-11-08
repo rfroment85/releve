@@ -2,8 +2,8 @@
 
 Extension Chrome / Edge pour les cabinets d'expertise comptable. Elle lit dans l'**espace professionnel impots.gouv** (déjà ouvert et connecté par l'utilisateur) les avis de **taxe foncière** et de **CFE** de tous les dossiers, années N et N-1. Elle les analyse **sur le poste** et produit une liste de travail triée par urgence :
 
-- paiements à vérifier et clients à prévenir ;
-- créances échues ;
+- paiements vérifiés à la source (synthèse des paiements d'impôts locaux et dette fiscale) et clients à prévenir ;
+- créances échues, regroupées par client avec les avis de mise en recouvrement rapprochés ;
 - réclamations possibles ;
 - hausses expliquées (effet des taux, effet des bases, biens nouveaux) ;
 - prélèvements à proposer.
@@ -12,7 +12,9 @@ Depuis la version 6, elle contrôle la **valeur locative des locaux professionne
 
 Elle propose aussi une vue des **habilitations** de l'espace (qui a accès à quel service, sur quel dossier, et ce qui manque) et le suivi des **clients à raccorder** (clients absents de l'espace du cabinet, avec un message prêt pour leur demander l'accès).
 
-Version : 6.0.0 · Licence : [EUPL 1.2](LICENSE) · Outil indépendant, non affilié à la DGFiP.
+Depuis la version 6.1, elle distingue **plusieurs espaces professionnels** (comptes impots.gouv) lus sur le même poste, reprend une mise à jour interrompue sans relire ce qui l'a déjà été, et affiche le temps restant. Voir les [conditions d'utilisation](https://releveavis.netlify.app/conditions.html) : outil d'aide, fourni en l'état.
+
+Version : 6.1.0 · Licence : [EUPL 1.2](LICENSE) · Outil indépendant, non affilié à la DGFiP.
 
 ## Version officielle
 

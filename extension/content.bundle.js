@@ -164,8 +164,13 @@ async function fetchText(url, opts = {}) {
 }
 
 // Jeton anti-CSRF : injecté dans les liens par le JS de la page « Mes services » : injectTokens("token", "XXXX-....", [...])
+// Compte impots.gouv connecté (n° d'abonné de l'espace professionnel) : lu sur « Mes services », sert à tagger les données de chaque espace
+let ABONNE = '';
+const abonneDe = (h) => ((h.replace(/<[^>]+>/g, ' ').match(/N°\s*d.abonn[ée]\s*:?\s*([0-9]{6,})/i)) || [])[1] || '';
+const abonneCourant = () => ABONNE;
 async function getToken() {
   const h = await fetchText(BASE + '/mire/accueil.do');
+  ABONNE = abonneDe(h) || ABONNE;
   if (!/idth=consulter\.avis\.cfe/.test(h)) throw new Error('Service « Avis CFE » introuvable dans le menu (droits insuffisants ?)');
   const m = h.match(/injectTokens\(\s*"token"\s*,\s*"([\w-]+)"/) || h.match(/[?&](?:amp;)?token=([\w-]{8,})/);
   if (!m) throw new Error('Jeton de session introuvable sur la page « Mes services »');
@@ -322,6 +327,46 @@ async function getDettes() {
   const rows = [...doc.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((x) => x.textContent.trim().replace(/\s+/g, ' ')))
     .filter((td) => td.length >= 14).map((td) => ({ annee: td[0], impot: td[1], departement: td[2], commune: td[3], nic: td[4], role: td[5], reference: td[6], nature: td[7], dateLimite: td[8], montantDu: td[9], paiementNature: td[10], paiementDate: td[11], paiementMontant: td[12], solde: td[13] }));
   return { rows, total };
+}
+
+// Synthèse des paiements d'impôts locaux du dossier courant (Compte fiscal › Synthèses › Paiements impôts locaux) :
+// pour chaque règlement, impôt, commune, NIC, date et montant payés, nature du paiement, période et référence de la dette.
+// Lecture seule : la page, puis le même formulaire avec le filtre impôt / année (requête ajax du site). Aucune étape de paiement.
+const PAIEMENTS_URL = BASE + '/adelie2mapi/xhtml/syntheses/synthese_impots_locaux.xhtml?emetteur=ADELIE_2';
+const jsfViewState = (h) => (h.match(/name="javax\.faces\.ViewState"[^>]*value="([^"]+)"/) || h.match(/value="([^"]+)"[^>]*name="javax\.faces\.ViewState"/) || h.match(/<update id="[^"]*ViewState[^"]*"><!\[CDATA\[([^\]]+)\]\]>/) || [])[1];
+function paiementsLignes(doc) {
+  return [...doc.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((x) => x.textContent.trim().replace(/\s+/g, ' ')))
+    .filter((td) => td.length >= 12 && /^(CFE|TF)$/i.test(td[0]))
+    .map((td) => ({ impot: td[0].toUpperCase(), anneePaiement: td[1], departement: td[2], commune: td[3], nic: td[4], datePaiement: td[5], dateLimite: td[6], montant: td[7], nature: td[8], periode: td[9], reference: td[10], natureDette: td[11] }));
+}
+async function getPaiements(annee, siren, impots = ['CFE', 'TF']) {
+  const h = await fetchText(PAIEMENTS_URL);
+  if (!/tableau-synthese-paiement/.test(h)) throw new Error('page « Paiements impôts locaux » non reconnue');
+  const sAff = (h.replace(/<[^>]+>/g, ' ').match(/SIREN ou IDSP\s*:?\s*(\d{9})/) || [])[1];
+  if (siren && sAff && sAff !== siren) throw new Error('Dossier courant inattendu (' + sAff + ')');
+  let vs = jsfViewState(h);
+  const doc0 = parseHTML(h);
+  let impot = ((doc0.querySelector('#editForm\\:selecteurImpot_input') || {}).value || 'CFE').toUpperCase();
+  let an = String((doc0.querySelector('#editForm\\:selecteurAnnee_input') || {}).value || '');
+  const rows = [], lus = new Set();
+  const retenir = (lignes) => { for (const r of lignes) if (!rows.some((x) => x.impot === r.impot && x.reference === r.reference && x.datePaiement === r.datePaiement && x.montant === r.montant && x.nic === r.nic)) rows.push(r); };
+  // Même requête que le site quand on change un sélecteur (PrimeFaces, rendu partiel du formulaire)
+  const choisir = async (champ, valeur) => {
+    const id = 'editForm:' + champ;
+    const body = new URLSearchParams({ 'javax.faces.partial.ajax': 'true', 'javax.faces.source': id, 'javax.faces.partial.execute': id, 'javax.faces.partial.render': 'editForm', 'javax.faces.behavior.event': 'valueChange', 'javax.faces.partial.event': 'change', [id + '_focus']: '', [id + '_input']: valeur, [id + '_editableInput']: valeur, 'javax.faces.ViewState': vs });
+    const x = await fetchText(PAIEMENTS_URL, { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Faces-Request': 'partial/ajax', 'X-Requested-With': 'XMLHttpRequest' } });
+    vs = jsfViewState(x) || vs;
+    const html = (x.match(/<update id="editForm"><!\[CDATA\[([\s\S]*?)\]\]><\/update>/) || [])[1];
+    if (!html) throw new Error('filtre « Paiements impôts locaux » refusé');
+    return parseHTML(html);
+  };
+  if (an !== String(annee)) { const d = await choisir('selecteurAnnee', String(annee)); an = String(annee); if (impots.includes(impot)) { retenir(paiementsLignes(d)); lus.add(impot); } }
+  else if (impots.includes(impot)) { retenir(paiementsLignes(doc0)); lus.add(impot); }
+  for (const imp of impots) {
+    if (lus.has(imp)) continue;
+    retenir(paiementsLignes(await choisir('selecteurImpot', imp))); lus.add(imp); impot = imp;
+  }
+  return { rows, annee: String(annee) };
 }
 
 // Avis de mise en recouvrement à payer (rubrique « Payer › Dette fiscale ») : pénalités, rappels… absents de la synthèse des dettes.
@@ -560,16 +605,27 @@ async function getHabilitations(token, onStep) {
     return habLignes(x);
   };
   const cle = (l) => l[0] + '|' + l[1];
-  const role = {}, etat = {};
+  const compte = (lignes) => { const m = new Map(); for (const l of lignes) { const k = cle(l); m.set(k, (m.get(k) || 0) + 1); } return m; };
+  const role = {};
   for (const r of Object.keys(HAB_ROLES)) { onStep?.(`Rôles : ${HAB_ROLES[r]}…`); for (const l of await filtrer(r, null)) role[cle(l)] = r; }
-  for (const e of Object.keys(HAB_ETATS)) { onStep?.(`États : ${HAB_ETATS[e]}…`); for (const l of await filtrer(null, e)) etat[cle(l)] = e; }
+  const nVeille = new Map(), nSupp = new Map();
+  for (const e of Object.keys(HAB_ETATS)) { onStep?.(`États : ${HAB_ETATS[e]}…`); const m = compte(await filtrer(null, e)); for (const [k, n] of m) (e === 'hab2' ? nVeille : nSupp).set(k, n); }
   await filtrer(null, null); // remet la page sans filtre, comme on l'a trouvée
-  // Noms des entreprises : liste des dossiers du service « Compte fiscal » (la page des habilitations ne donne que le SIREN)
-  let noms = {};
-  try { onStep?.('Noms des dossiers…'); noms = Object.fromEntries((await listDossiers(token, null, 'consulter.adelie.le_compte_fiscal')).map((d) => [d.siren, d.nom])); } catch {}
-  const vus = new Set(), rows = [];
-  for (const l of tous) { const k = cle(l); if (vus.has(k)) continue; vus.add(k); rows.push({ siren: l[0], service: l[1], role: role[k] || '', etat: etat[k] === 'hab3' ? 'Supprimé' : etat[k] === 'hab2' ? 'En veille' : 'Actif' }); }
-  return { at: Date.now(), abonne, rows, noms };
+  // Noms des entreprises : la page des habilitations ne donne que le SIREN ; on les prend dans la liste des dossiers
+  // du service « Compte fiscal », puis « Avis CFE », puis « Taxe foncière » (un compte n'a pas forcément tous ces services)
+  let noms = {}; const echecs = [];
+  for (const [idth, lib] of [['consulter.adelie.le_compte_fiscal', 'Compte fiscal'], ['consulter.avis.cfe', 'Avis CFE'], ['consulter.avis.tf', 'Taxe foncière']]) {
+    if (Object.keys(noms).length) break;
+    try { onStep?.(`Noms des dossiers (${lib})…`); noms = Object.fromEntries((await listDossiers(token, null, idth)).map((d) => [d.siren, d.nom])); } catch (e) { echecs.push(`${lib} : ${e.message}`); }
+  }
+  // Un couple dossier + service est actif dès qu'une de ses lignes l'est ; « en veille » ou « supprimé » seulement si toutes le sont
+  const total = compte(tous), vus = new Set(), rows = [];
+  for (const l of tous) {
+    const k = cle(l); if (vus.has(k)) continue; vus.add(k);
+    const n = total.get(k) || 1, v = nVeille.get(k) || 0, su = nSupp.get(k) || 0, actives = Math.max(0, n - v - su);
+    rows.push({ siren: l[0], service: l[1], role: role[k] || '', etat: actives > 0 ? 'Actif' : v > 0 ? 'En veille' : 'Supprimé', detail: n > 1 ? { total: n, actives, veille: v, supprimees: su } : undefined });
+  }
+  return { at: Date.now(), abonne, rows, noms, echecs };
 }
 
 // ======================================================================
@@ -671,12 +727,17 @@ function enFenetre(taxeKey, now = new Date()) {
   return (md >= 501 && md <= 630) || (md >= 1020 && md <= 1231);
 }
 const H = 3600e3;
+// Période où les paiements d'impôts locaux valent la peine d'être lus : autour des échéances (acompte de CFE 15/06, taxe foncière 15/10, solde de CFE 15/12) et les semaines qui suivent
+function enPeriodePaiement(now = new Date()) { const md = (now.getMonth() + 1) * 100 + now.getDate(); return md >= 1001 || md <= 228 || (md >= 615 && md <= 731); }
 // Faut-il relire cette partie du dossier ? (mode rapide ; le mode complet relit tout)
-function aLire(part, k, now) {
+// cycle : début de la mise à jour en cours si elle a été interrompue (une partie lue depuis n'est pas relue, même après 20 h, pendant 7 jours)
+function aLire(part, k, now, cycle = 0) {
   if (!k) return true;
   const at = k[part + 'At'] || 0, age = now - at;
+  if (cycle && at >= cycle && age < 7 * 24 * H) return false; // lu pendant la mise à jour interrompue : reprise sans relecture
   if (part === 'amr') return age > (k.amrIndispo ? 30 * 24 * H : 7 * 24 * H);
   if (part === 'dettes') return age > 20 * H;
+  if (part === 'pay') return age > 20 * H;
   if (part === 'gmbi') return age > 30 * 24 * H; // biens immobiliers : les surfaces et catégories bougent rarement
   if (age < 20 * H) return false; // déjà lu aujourd'hui (reprise après une pause)
   const vide = !((k.annees || {})[part.toUpperCase()] || []).length;
@@ -697,8 +758,9 @@ async function collect(opts) {
   const complet = !!opts.complet;
   try {
     const kr = (await send({ type: 'ac:getKnown' })) || {};
-    const known = new Set(kr.ids || []), kd = kr.dossiers || {};
+    const known = new Set(kr.ids || []), kd = kr.dossiers || {}, cycle = complet ? 0 : (kr.cycleStart || 0);
     let token = await getToken();
+    const compte = abonneCourant(); // n° d'abonné de l'espace connecté : chaque donnée lue est rattachée à ce compte
     send({ type: 'ac:progress', phase: 'liste', done: 0, total: 0, label: 'Lecture de la liste des dossiers…' });
     // Liste gardée en mémoire (reprise rapide) : réutilisée seulement si elle correspond à l'espace connecté maintenant
     // (sinon, après un changement de compte impots.gouv, on lirait les dossiers de l'espace précédent)
@@ -710,10 +772,16 @@ async function collect(opts) {
       // Espace d'une entreprise (codes du client) : pas de liste, un seul dossier, celui affiché
       if (!dossiers.length) { const m = await dossierDeLEspace(); if (m) { if (!m.nom) { m.nom = 'Entreprise ' + m.siren; m.nomProvisoire = true; } dossiers = [m]; send({ type: 'ac:log', level: 'info', text: `Espace d'une seule entreprise : SIREN ${m.siren}` }); } }
       if (!dossiers.length) throw new Error('Aucun dossier trouvé dans cet espace professionnel (service « Avis CFE » sans dossier rattaché ?)');
-      await send({ type: 'ac:dossierList', list: dossiers });
+      await send({ type: 'ac:dossierList', list: dossiers, compte });
     }
     if (opts.scope && opts.scope.length) { const sc = new Set(opts.scope); dossiers = dossiers.filter((d) => sc.has(d.siren)); }
     AC.total = dossiers.length;
+    // Ce qu'il reste réellement à lire : les dossiers déjà frais passent en une fraction de seconde (reprise visible, temps restant honnête)
+    const besoin = (d) => { const k = complet ? null : kd[d.siren]; return !k || taxes.some((t) => aLire(t.key.toLowerCase(), k, now, cycle)) || (opts.dettes !== false && aLire('dettes', k, now, cycle)) || (opts.amr !== false && aLire('amr', k, now, cycle)) || (opts.biens !== false && aLire('gmbi', k, now, cycle)) || (opts.paiements !== false && enPeriodePaiement() && aLire('pay', k, now, cycle)); };
+    const aFaire = dossiers.filter(besoin).length, dejaLus = dossiers.length - aFaire;
+    let faits = 0, moyenne = 0, echecsPay = 0; // durée moyenne lissée d'un dossier réellement lu ; échecs consécutifs de lecture des paiements
+    const progres = (d, extra) => { const restants = aFaire - faits, eta = faits >= 3 && moyenne ? Math.round(moyenne * restants / 1000) : null; send({ type: 'ac:progress', phase: 'dossiers', done: AC.done, total: dossiers.length, dejaLus, aFaire, faits, label: d ? d.nom + (extra ? ' · ' + extra : '') : '', eta, compte }); };
+    if (dejaLus) send({ type: 'ac:log', level: 'info', text: `Reprise : ${dejaLus} dossier${dejaLus > 1 ? 's' : ''} déjà à jour, ${aFaire} à lire` });
 
     // Lecture d'un impôt pour le dossier sélectionné : tableau, puis PDF des avis absents du poste
     const lireTaxe = async (taxe, d, out) => {
@@ -728,6 +796,7 @@ async function collect(opts) {
         const id = avisId(taxe, d.siren, row);
         const record = { id, taxe: taxe.key, siren: d.siren, nom: d.nom, annee: row.anneeImposition, commune: row.commune, departement: row.departement, nic: row.nic, reference: row.reference, role: row.role, type: row.type, dateLimite: row.dateLimite, dateRecouvrement: row.dateRecouvrement, montant: numVal(row.montant), payer: !!row.payer, acompte: isAcompte(row), seenAt: Date.now() };
         stats.avis++;
+        record.compte = compte;
         if (known.has(id)) { await send({ type: 'ac:avis', record }); continue; }
         // Téléchargement contrôlé : un PDF dont la référence (ou le SIREN) ne correspond pas à la ligne vient d'un autre dossier
         // (dossier changé côté site pendant la lecture) : on resélectionne le dossier et on recommence, sans jamais le garder.
@@ -762,11 +831,22 @@ async function collect(opts) {
         known.add(id); stats.pdf++; stats.nouveaux++;
       }
     };
+    // Coupure réseau : on attend le retour de la connexion (jusqu'à 10 minutes) au lieu d'arrêter la mise à jour
+    const attendreReseau = async () => {
+      const debut = Date.now();
+      while (Date.now() - debut < 10 * 60e3 && !AC.stop) {
+        send({ type: 'ac:progress', phase: 'attente', done: AC.done, total: dossiers.length, dejaLus, aFaire, faits, label: `Connexion interrompue : nouvelle tentative dans 15 s (${Math.round((Date.now() - debut) / 1000)} s)`, eta: null, compte });
+        await sleep(15000);
+        try { const r = await fetch(BASE + '/mire/accueil.do', { credentials: 'include', redirect: 'manual' }); if (r.type === 'opaqueredirect') throw new Error('Session expirée : reconnectez-vous à l’espace professionnel'); if (r.ok) { send({ type: 'ac:log', level: 'info', text: 'Connexion rétablie, la mise à jour reprend' }); return true; } } catch (e) { if (/Session expirée/.test(e.message)) throw e; }
+      }
+      throw new Error('Réseau indisponible pendant plus de 10 minutes : relancez la mise à jour quand la connexion sera revenue (les dossiers déjà lus ne seront pas relus)');
+    };
     // Une partie avec reprise : en cas d'échec (sauf session expirée), on resélectionne le dossier et on recommence
     const avecReprise = async (label, d, fn) => {
       for (let essai = 0; ; essai++) {
         try { return await fn(); } catch (e) {
           if (/Session expirée/.test(e.message)) throw e;
+          if (/Réseau indisponible|Failed to fetch|NetworkError/.test(e.message)) { await attendreReseau(); essai--; token = await getToken(); if (!d.mono) try { await selectDossier(token, d.siren); } catch {} continue; }
           if (essai >= 2) { stats.erreurs++; send({ type: 'ac:log', level: 'warn', text: `${d.nom} (${label}) : ${e.message}` }); return null; }
           await sleep(800 * (essai + 1));
           if (/CSRF/.test(e.message)) token = await getToken();
@@ -779,15 +859,18 @@ async function collect(opts) {
       if (AC.stop) break;
       const d = dossiers[i], k = complet ? null : kd[d.siren];
       AC.done = i; AC.current = d.nom;
-      const elapsed = (Date.now() - t0) / 1000, eta = i > 4 ? Math.round(elapsed / i * (dossiers.length - i)) : null;
-      send({ type: 'ac:progress', phase: 'dossiers', done: i, total: dossiers.length, label: d.nom, eta });
-      const lireT = taxes.filter((t) => aLire(t.key.toLowerCase(), k, now));
-      const lireD = opts.dettes !== false && aLire('dettes', k, now);
-      const lireA = opts.amr !== false && aLire('amr', k, now);
-      const lireB = opts.biens !== false && aLire('gmbi', k, now);
+      const lireT = taxes.filter((t) => aLire(t.key.toLowerCase(), k, now, cycle));
+      const lireD = opts.dettes !== false && aLire('dettes', k, now, cycle);
+      const lireA = opts.amr !== false && aLire('amr', k, now, cycle);
+      const lireB = opts.biens !== false && aLire('gmbi', k, now, cycle);
+      // Paiements d'impôts locaux : autour des échéances, pour les dossiers qui ont (ou peuvent avoir) un avis de l'année
+      const aDesAvisN = !k || lireT.length || Object.values((k.annees || {})).some((l) => (l || []).includes(annee));
+      const lireP = opts.paiements !== false && enPeriodePaiement() && aDesAvisN && aLire('pay', k, now, cycle);
       stats.pagesEvitees += (taxes.length - lireT.length) + (opts.dettes !== false && !lireD ? 1 : 0) + (opts.amr !== false && !lireA ? 1 : 0) + (opts.biens !== false && !lireB ? 1 : 0);
-      const out = { annees: { ...((kd[d.siren] || {}).annees || {}) } };
-      if (lireT.length || lireD || lireA || lireB) {
+      const out = { annees: { ...((kd[d.siren] || {}).annees || {}) }, compte };
+      const lit = lireT.length || lireD || lireA || lireB || lireP, tDossier = Date.now();
+      if (lit) progres(d);
+      if (lit) {
         const ok = d.mono ? true : await avecReprise('sélection du dossier', d, () => selectDossier(token, d.siren));
         if (ok === null) { /* dossier non sélectionnable : on passe au suivant */ }
         else {
@@ -799,25 +882,38 @@ async function collect(opts) {
           if (lireD) parts.push(avecReprise('dettes fiscales', d, async () => { dt = await getDettes(); out.dettesAt = Date.now(); stats.dettes += dt.rows.length; }));
           await Promise.all(parts);
           if (lireA && !AC.stop) await avecReprise('documents à payer', d, async () => { const a = await getAmr(token, d.siren); token = a.token; am = a; out.amrAt = Date.now(); out.amrIndispo = a.indispo || ''; stats.amr += a.rows.length; });
-          if (dt || am) await send({ type: 'ac:dettes', siren: d.siren, nom: d.nom, rows: dt ? dt.rows : null, total: dt ? numVal(dt.total) : null, amr: am ? am.rows : null, amrIndispo: am ? (am.indispo || '') : undefined });
+          if (dt || am) await send({ type: 'ac:dettes', siren: d.siren, nom: d.nom, rows: dt ? dt.rows : null, total: dt ? numVal(dt.total) : null, amr: am ? am.rows : null, amrIndispo: am ? (am.indispo || '') : undefined, compte });
+          // Paiements d'impôts locaux (date, montant, nature) : dit à la source si chaque avis de l'année est payé
+          // (lecture abandonnée pour le reste de la mise à jour après 3 échecs de suite : service absent de cet espace, page changée…)
+          if (lireP && !AC.stop && echecsPay < 3) {
+            const ok = await avecReprise('paiements', d, async () => {
+              const pg = await getPaiements(annee, d.mono ? '' : d.siren);
+              out.payAt = Date.now(); stats.paiements = (stats.paiements || 0) + pg.rows.length;
+              await send({ type: 'ac:paiements', siren: d.siren, nom: d.nom, annee, rows: pg.rows, compte });
+              return true;
+            });
+            echecsPay = ok ? 0 : echecsPay + 1;
+            if (echecsPay === 3) send({ type: 'ac:log', level: 'warn', text: 'Paiements d’impôts locaux illisibles dans cet espace : lecture suspendue pour cette mise à jour (la dette fiscale sert de contrôle)' });
+          }
           // Biens immobiliers (« Gérer mes biens immobiliers ») : liste des biens et fiche de chaque local professionnel, pour le contrôle de la valeur locative
           if (lireB && !AC.stop) await avecReprise('biens immobiliers', d, async () => {
-            const g = await getBiens(token, (i, n) => { if (n > 3) send({ type: 'ac:progress', phase: 'dossiers', done: AC.done, total: dossiers.length, label: `${d.nom} · locaux ${i}/${n}`, eta: null }); }, Math.min(pause, 120));
+            const g = await getBiens(token, (i, n) => { if (n > 3) progres(d, `locaux ${i}/${n}`); }, Math.min(pause, 120));
             if (g.siren && g.siren !== d.siren) throw new Error('Dossier courant inattendu (' + g.siren + ')');
             out.gmbiAt = Date.now(); out.gmbiIndispo = g.indispo || '';
             stats.biens += g.biens.length; stats.locaux += g.biens.filter((b) => b.pro).length;
-            await send({ type: 'ac:biens', siren: d.siren, nom: d.nom, biens: g.biens, attendues: g.attendues, indispo: g.indispo || '' });
+            await send({ type: 'ac:biens', siren: d.siren, nom: d.nom, biens: g.biens, attendues: g.attendues, indispo: g.indispo || '', compte });
           });
         }
+        faits++; const dt0 = Date.now() - tDossier; moyenne = moyenne ? moyenne * 0.8 + dt0 * 0.2 : dt0;
       }
       await send({ type: 'ac:dossier', siren: d.siren, nom: d.nom, ...out, checkedAt: Date.now() });
       stats.dossiers++;
-      if (pause) await sleep(pause);
+      if (lit && pause) await sleep(pause);
     }
     AC.done = AC.total;
-    await send({ type: 'ac:done', stats, stopped: AC.stop, duree: Math.round((Date.now() - t0) / 1000), annee: opts.annee, scope: opts.scope || null, complet });
+    await send({ type: 'ac:done', stats, stopped: AC.stop, duree: Math.round((Date.now() - t0) / 1000), annee: opts.annee, scope: opts.scope || null, complet, compte, dejaLus, aFaire });
   } catch (e) {
-    await send({ type: 'ac:error', text: e.message, stats });
+    await send({ type: 'ac:error', text: e.message, stats, session: /Session expirée/.test(e.message) });
   } finally {
     AC.running = false;
   }

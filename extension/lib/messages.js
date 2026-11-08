@@ -11,10 +11,13 @@ const ACM = (() => {
 const IMPOT_LIB = { CFE: 'cotisation foncière des entreprises (CFE)', PAS: 'prélèvement à la source', TVA: 'TVA', IS: 'impôt sur les sociétés', TF: 'taxe foncière', CVAE: 'CVAE' };
 const detteCtx = (r) => ({ id: 'det:' + r.siren + r.reference, siren: r.siren, nom: r.nom, taxe: r.impot, label: IMPOT_LIB[r.impot] || r.impot, labelCourt: r.impot, annee: r.annee, commune: r.commune, montant: r.solde, dateLimite: r.dateLimite, reference: r.reference, hasPdf: false });
 const amrCtx = (r) => ({ id: 'amr:' + r.siren + r.amr, siren: r.siren, nom: r.nom, taxe: 'AMR', label: 'avis de mise en recouvrement', labelCourt: 'AMR', annee: '', montant: r.montant, amr: r.amr, hasPdf: false });
+// Plusieurs créances d'un même client (dettes échues et avis de mise en recouvrement rapprochés) : un seul contexte
+const dettesCtx = (t) => ({ id: 'det:' + t.siren, siren: t.siren, nom: t.nom, taxe: 'DETTES', label: 'créances', labelCourt: 'Créances', annee: '', montant: t.montant, lignes: t.dettes || [], hasPdf: false });
+const ligneDette = (l) => l.impot === 'AMR' ? `avis de mise en recouvrement ${l.reference} : ${eur2(l.exigible)}` : `${IMPOT_LIB[l.impot] || l.impot} ${l.annee}${l.commune ? ` (${l.commune})` : ''}${l.reference && !/^Déclaration$/i.test(l.reference) ? `, ${l.reference}` : ''} : ${eur2(l.montant)} échus le ${l.dateLimite}${l.amr ? `, portés à ${eur2(l.exigible)} par l’avis de mise en recouvrement n° ${l.amr}` : ''}`;
 // Une action « message » → élément de message { kind, a, task }
 function mailItem(t) {
   if (!t || !t.action || !t.action.startsWith('mail')) return null;
-  if (t.action === 'mail-dette') return t.dette ? { kind: 'dette', a: detteCtx(t.dette), task: t } : null;
+  if (t.action === 'mail-dette') return t.dettes && t.dettes.length ? { kind: 'dettes', a: dettesCtx(t), task: t } : t.dette ? { kind: 'dette', a: detteCtx(t.dette), task: t } : null;
   if (t.action === 'mail-amr') return t.amr ? { kind: 'amr', a: amrCtx(t.amr), task: t } : null;
   if (t.action === 'mail-prelevement') return { kind: 'prelevement', a: { ...t.avis, avisList: t.avisList }, task: t };
   return t.avis ? { kind: t.action.slice(5), a: t.avis, task: t } : null;
@@ -44,6 +47,10 @@ function mailDraft(kind, a, detaille) {
   } else if (kind === 'dette') {
     subject = `${txc} ${a.annee} : montant restant dû`;
     body = `Bonjour,\n\nUn montant de ${mt} au titre de : ${tx} ${a.annee}${a.reference ? ` (${a.reference})` : ''} apparaît toujours comme non réglé dans votre situation fiscale, alors que la date limite (${a.dateLimite}) est passée. Une majoration peut s’appliquer.\n\nPouvez-vous vérifier ce paiement et nous tenir informés ?\n\nBien cordialement,${sig}`;
+  } else if (kind === 'dettes') {
+    const l = a.lignes || [], avecAmr = l.some((x) => x.amr || x.impot === 'AMR');
+    subject = l.length === 1 ? `${l[0].impot === 'AMR' ? 'Avis de mise en recouvrement' : (l[0].impot + ' ' + l[0].annee)} : ${mt} à régler` : `Vos impôts : ${mt} restent à régler (${l.length} points)`;
+    body = `Bonjour,\n\nVotre situation fiscale sur impots.gouv.fr fait apparaître ${l.length === 1 ? 'une somme non réglée' : `${l.length} sommes non réglées`}, pour un total de ${mt} :\n\n${l.map((x) => `- ${ligneDette(x)}`).join('\n')}\n\n${avecAmr ? 'Un avis de mise en recouvrement a été émis par le service des impôts : le règlement est à faire sans attendre, depuis votre espace professionnel (rubrique « Payer › Dette fiscale »), pour éviter de nouvelles poursuites.' : 'Une majoration (5 % ou 10 % selon l’impôt) et des intérêts de retard peuvent s’appliquer ; le règlement reste possible depuis votre espace professionnel sur impots.gouv.fr (rubrique « Payer »).'}\n\nS’il s’agit d’un paiement déjà effectué, merci de nous en transmettre la preuve pour que nous puissions vérifier son affectation.\n\nBien cordialement,${sig}`;
   } else if (kind === 'amr') {
     subject = `Avis de mise en recouvrement n° ${a.amr} : ${mt} à payer`;
     body = `Bonjour,\n\nUn avis de mise en recouvrement (n° ${a.amr}) d’un montant de ${mt} est à payer dans votre espace professionnel sur impots.gouv.fr (rubrique « Payer › Dette fiscale »). Il s’agit en général d’une pénalité, d’une majoration ou d’un rappel d’impôt.\n\nAvez-vous reçu ce document ? Pouvez-vous nous en transmettre une copie ou nous confirmer son règlement ? Nous vérifierons avec vous s’il est fondé et, le cas échéant, si une demande de remise est envisageable.\n\nBien cordialement,${sig}`;
@@ -77,6 +84,7 @@ function sectionText(kind, a, detaille) {
   if (kind === 'rappel') return `${Tx} ${a.annee}${lieu} : ${mt} à payer avant le ${a.dateLimite}. Cet avis n’est pas prélevé automatiquement : vous pouvez le régler en ligne depuis votre espace professionnel sur impots.gouv.fr (rubrique « Payer »).`;
   if (kind === 'verif') return `${Tx} ${a.annee}${lieu} : ${mt} à régler avant le ${a.dateLimite}, sans prélèvement automatique. Pouvez-vous nous confirmer que le paiement a été effectué ? À défaut, une majoration de 10 % s’applique.`;
   if (kind === 'dette') return `${Tx} ${a.annee}${a.reference ? ` (${a.reference})` : ''} : ${mt} restent dus depuis le ${a.dateLimite}. Pouvez-vous vérifier ce paiement ?`;
+  if (kind === 'dettes') return `Sommes non réglées (${mt} au total) : ${(a.lignes || []).map(ligneDette).join(' ; ')}. ${(a.lignes || []).some((x) => x.amr || x.impot === 'AMR') ? 'Un avis de mise en recouvrement a été émis : règlement à faire sans attendre (« Payer › Dette fiscale »).' : 'Une majoration peut s’appliquer ; pouvez-vous vérifier ces paiements ?'}`;
   if (kind === 'amr') return `Avis de mise en recouvrement n° ${a.amr} : ${mt} à payer (rubrique « Payer › Dette fiscale »). Il s’agit en général d’une pénalité, d’une majoration ou d’un rappel. Pouvez-vous nous en transmettre une copie ou nous confirmer son règlement ?`;
   if (kind === 'prelevement') return prelevementText(a);
   if ((kind === 'explication' || kind === 'auto') && a.n1) {
@@ -107,14 +115,14 @@ function mailForItems(items, detaille) {
     if (it.kind === 'prelevement') return { to: info.email || a0.email || '', subject: 'Prélèvement automatique de vos impôts locaux', body: `Bonjour,\n\n${prelevementText(it.a)}\n\nBien cordialement,${sig}`, attach: [], avis: a0 };
     return { ...mailDraft(it.kind, it.a, detaille), attach };
   }
-  const q = items.some((x) => ['verif', 'dette', 'amr'].includes(x.kind) || (x.a.d && x.a.d.nouveaux > 0.5));
+  const q = items.some((x) => ['verif', 'dette', 'dettes', 'amr'].includes(x.kind) || (x.a.d && x.a.d.nouveaux > 0.5));
   const body = `Bonjour,\n\nVoici le point sur vos impôts${items.every((x) => ['TF', 'CFE'].includes(x.a.taxe)) ? ' locaux' : ''} :\n\n`
     + items.map((x, i) => `${i + 1}. ${sectionText(x.kind, x.a, detaille)}`).join('\n\n')
     + `${attach.length ? `\n\nVous trouverez ${attach.length > 1 ? 'les avis' : 'l’avis'} en pièce jointe.` : ''}${q ? '\n\nMerci de nous apporter les confirmations demandées.' : ''}\n\nBien cordialement,${sig}`;
   return { to: info.email || a0.email || '', subject: `Vos impôts ${C().annee} : ${items.length} points à voir`, body, attach, avis: a0 };
 }
-const KIND_LIB = { rappel: 'à payer avant l’échéance', verif: 'confirmation de paiement', dette: 'solde restant dû', amr: 'avis de mise en recouvrement', prelevement: 'proposition de prélèvement', explication: 'explication de la hausse', auto: 'information', info: 'information' };
-const itemLib = (x) => x.kind === 'amr' ? `AMR n° ${x.a.amr} · ${KIND_LIB.amr}` : x.kind === 'prelevement' ? KIND_LIB.prelevement : `${x.a.labelCourt || TAXE_LABEL[x.a.taxe] || x.a.taxe} ${x.a.annee || ''}${x.a.commune ? ' · ' + x.a.commune : ''} · ${KIND_LIB[x.kind] || ''}`;
+const KIND_LIB = { rappel: 'à payer avant l’échéance', verif: 'confirmation de paiement', dette: 'solde restant dû', dettes: 'sommes à régler', amr: 'avis de mise en recouvrement', prelevement: 'proposition de prélèvement', explication: 'explication de la hausse', auto: 'information', info: 'information' };
+const itemLib = (x) => x.kind === 'dettes' ? `${(x.a.lignes || []).length} créance${(x.a.lignes || []).length > 1 ? 's' : ''} · ${KIND_LIB.dettes}` : x.kind === 'amr' ? `AMR n° ${x.a.amr} · ${KIND_LIB.amr}` : x.kind === 'prelevement' ? KIND_LIB.prelevement : `${x.a.labelCourt || TAXE_LABEL[x.a.taxe] || x.a.taxe} ${x.a.annee || ''}${x.a.commune ? ' · ' + x.a.commune : ''} · ${KIND_LIB[x.kind] || ''}`;
 
 // Brouillon de réclamation (à déposer par la messagerie sécurisée ou par courrier ; rien n'est déposé par l'outil)
 function reclamationText(t) {
@@ -159,6 +167,6 @@ ${signature || 'Bien cordialement,'}`;
   return { objet, texte };
 }
 
-return { raccordementTexte, setContext, IMPOT_LIB, detteCtx, amrCtx, mailItem, libColl, listeEt, mailDraft, sectionText, prelevementText, mailForItems, KIND_LIB, itemLib, reclamationText };
+return { raccordementTexte, setContext, IMPOT_LIB, detteCtx, amrCtx, dettesCtx, mailItem, libColl, listeEt, mailDraft, sectionText, prelevementText, mailForItems, KIND_LIB, itemLib, reclamationText };
 })();
 if (typeof self !== 'undefined') self.ACM = ACM;

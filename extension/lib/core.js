@@ -31,8 +31,13 @@ async function fetchText(url, opts = {}) {
 }
 
 // Jeton anti-CSRF : injecté dans les liens par le JS de la page « Mes services » : injectTokens("token", "XXXX-....", [...])
+// Compte impots.gouv connecté (n° d'abonné de l'espace professionnel) : lu sur « Mes services », sert à tagger les données de chaque espace
+let ABONNE = '';
+const abonneDe = (h) => ((h.replace(/<[^>]+>/g, ' ').match(/N°\s*d.abonn[ée]\s*:?\s*([0-9]{6,})/i)) || [])[1] || '';
+const abonneCourant = () => ABONNE;
 async function getToken() {
   const h = await fetchText(BASE + '/mire/accueil.do');
+  ABONNE = abonneDe(h) || ABONNE;
   if (!/idth=consulter\.avis\.cfe/.test(h)) throw new Error('Service « Avis CFE » introuvable dans le menu (droits insuffisants ?)');
   const m = h.match(/injectTokens\(\s*"token"\s*,\s*"([\w-]+)"/) || h.match(/[?&](?:amp;)?token=([\w-]{8,})/);
   if (!m) throw new Error('Jeton de session introuvable sur la page « Mes services »');
@@ -189,6 +194,46 @@ async function getDettes() {
   const rows = [...doc.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((x) => x.textContent.trim().replace(/\s+/g, ' ')))
     .filter((td) => td.length >= 14).map((td) => ({ annee: td[0], impot: td[1], departement: td[2], commune: td[3], nic: td[4], role: td[5], reference: td[6], nature: td[7], dateLimite: td[8], montantDu: td[9], paiementNature: td[10], paiementDate: td[11], paiementMontant: td[12], solde: td[13] }));
   return { rows, total };
+}
+
+// Synthèse des paiements d'impôts locaux du dossier courant (Compte fiscal › Synthèses › Paiements impôts locaux) :
+// pour chaque règlement, impôt, commune, NIC, date et montant payés, nature du paiement, période et référence de la dette.
+// Lecture seule : la page, puis le même formulaire avec le filtre impôt / année (requête ajax du site). Aucune étape de paiement.
+const PAIEMENTS_URL = BASE + '/adelie2mapi/xhtml/syntheses/synthese_impots_locaux.xhtml?emetteur=ADELIE_2';
+const jsfViewState = (h) => (h.match(/name="javax\.faces\.ViewState"[^>]*value="([^"]+)"/) || h.match(/value="([^"]+)"[^>]*name="javax\.faces\.ViewState"/) || h.match(/<update id="[^"]*ViewState[^"]*"><!\[CDATA\[([^\]]+)\]\]>/) || [])[1];
+function paiementsLignes(doc) {
+  return [...doc.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((x) => x.textContent.trim().replace(/\s+/g, ' ')))
+    .filter((td) => td.length >= 12 && /^(CFE|TF)$/i.test(td[0]))
+    .map((td) => ({ impot: td[0].toUpperCase(), anneePaiement: td[1], departement: td[2], commune: td[3], nic: td[4], datePaiement: td[5], dateLimite: td[6], montant: td[7], nature: td[8], periode: td[9], reference: td[10], natureDette: td[11] }));
+}
+async function getPaiements(annee, siren, impots = ['CFE', 'TF']) {
+  const h = await fetchText(PAIEMENTS_URL);
+  if (!/tableau-synthese-paiement/.test(h)) throw new Error('page « Paiements impôts locaux » non reconnue');
+  const sAff = (h.replace(/<[^>]+>/g, ' ').match(/SIREN ou IDSP\s*:?\s*(\d{9})/) || [])[1];
+  if (siren && sAff && sAff !== siren) throw new Error('Dossier courant inattendu (' + sAff + ')');
+  let vs = jsfViewState(h);
+  const doc0 = parseHTML(h);
+  let impot = ((doc0.querySelector('#editForm\\:selecteurImpot_input') || {}).value || 'CFE').toUpperCase();
+  let an = String((doc0.querySelector('#editForm\\:selecteurAnnee_input') || {}).value || '');
+  const rows = [], lus = new Set();
+  const retenir = (lignes) => { for (const r of lignes) if (!rows.some((x) => x.impot === r.impot && x.reference === r.reference && x.datePaiement === r.datePaiement && x.montant === r.montant && x.nic === r.nic)) rows.push(r); };
+  // Même requête que le site quand on change un sélecteur (PrimeFaces, rendu partiel du formulaire)
+  const choisir = async (champ, valeur) => {
+    const id = 'editForm:' + champ;
+    const body = new URLSearchParams({ 'javax.faces.partial.ajax': 'true', 'javax.faces.source': id, 'javax.faces.partial.execute': id, 'javax.faces.partial.render': 'editForm', 'javax.faces.behavior.event': 'valueChange', 'javax.faces.partial.event': 'change', [id + '_focus']: '', [id + '_input']: valeur, [id + '_editableInput']: valeur, 'javax.faces.ViewState': vs });
+    const x = await fetchText(PAIEMENTS_URL, { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Faces-Request': 'partial/ajax', 'X-Requested-With': 'XMLHttpRequest' } });
+    vs = jsfViewState(x) || vs;
+    const html = (x.match(/<update id="editForm"><!\[CDATA\[([\s\S]*?)\]\]><\/update>/) || [])[1];
+    if (!html) throw new Error('filtre « Paiements impôts locaux » refusé');
+    return parseHTML(html);
+  };
+  if (an !== String(annee)) { const d = await choisir('selecteurAnnee', String(annee)); an = String(annee); if (impots.includes(impot)) { retenir(paiementsLignes(d)); lus.add(impot); } }
+  else if (impots.includes(impot)) { retenir(paiementsLignes(doc0)); lus.add(impot); }
+  for (const imp of impots) {
+    if (lus.has(imp)) continue;
+    retenir(paiementsLignes(await choisir('selecteurImpot', imp))); lus.add(imp); impot = imp;
+  }
+  return { rows, annee: String(annee) };
 }
 
 // Avis de mise en recouvrement à payer (rubrique « Payer › Dette fiscale ») : pénalités, rappels… absents de la synthèse des dettes.
@@ -427,16 +472,27 @@ async function getHabilitations(token, onStep) {
     return habLignes(x);
   };
   const cle = (l) => l[0] + '|' + l[1];
-  const role = {}, etat = {};
+  const compte = (lignes) => { const m = new Map(); for (const l of lignes) { const k = cle(l); m.set(k, (m.get(k) || 0) + 1); } return m; };
+  const role = {};
   for (const r of Object.keys(HAB_ROLES)) { onStep?.(`Rôles : ${HAB_ROLES[r]}…`); for (const l of await filtrer(r, null)) role[cle(l)] = r; }
-  for (const e of Object.keys(HAB_ETATS)) { onStep?.(`États : ${HAB_ETATS[e]}…`); for (const l of await filtrer(null, e)) etat[cle(l)] = e; }
+  const nVeille = new Map(), nSupp = new Map();
+  for (const e of Object.keys(HAB_ETATS)) { onStep?.(`États : ${HAB_ETATS[e]}…`); const m = compte(await filtrer(null, e)); for (const [k, n] of m) (e === 'hab2' ? nVeille : nSupp).set(k, n); }
   await filtrer(null, null); // remet la page sans filtre, comme on l'a trouvée
-  // Noms des entreprises : liste des dossiers du service « Compte fiscal » (la page des habilitations ne donne que le SIREN)
-  let noms = {};
-  try { onStep?.('Noms des dossiers…'); noms = Object.fromEntries((await listDossiers(token, null, 'consulter.adelie.le_compte_fiscal')).map((d) => [d.siren, d.nom])); } catch {}
-  const vus = new Set(), rows = [];
-  for (const l of tous) { const k = cle(l); if (vus.has(k)) continue; vus.add(k); rows.push({ siren: l[0], service: l[1], role: role[k] || '', etat: etat[k] === 'hab3' ? 'Supprimé' : etat[k] === 'hab2' ? 'En veille' : 'Actif' }); }
-  return { at: Date.now(), abonne, rows, noms };
+  // Noms des entreprises : la page des habilitations ne donne que le SIREN ; on les prend dans la liste des dossiers
+  // du service « Compte fiscal », puis « Avis CFE », puis « Taxe foncière » (un compte n'a pas forcément tous ces services)
+  let noms = {}; const echecs = [];
+  for (const [idth, lib] of [['consulter.adelie.le_compte_fiscal', 'Compte fiscal'], ['consulter.avis.cfe', 'Avis CFE'], ['consulter.avis.tf', 'Taxe foncière']]) {
+    if (Object.keys(noms).length) break;
+    try { onStep?.(`Noms des dossiers (${lib})…`); noms = Object.fromEntries((await listDossiers(token, null, idth)).map((d) => [d.siren, d.nom])); } catch (e) { echecs.push(`${lib} : ${e.message}`); }
+  }
+  // Un couple dossier + service est actif dès qu'une de ses lignes l'est ; « en veille » ou « supprimé » seulement si toutes le sont
+  const total = compte(tous), vus = new Set(), rows = [];
+  for (const l of tous) {
+    const k = cle(l); if (vus.has(k)) continue; vus.add(k);
+    const n = total.get(k) || 1, v = nVeille.get(k) || 0, su = nSupp.get(k) || 0, actives = Math.max(0, n - v - su);
+    rows.push({ siren: l[0], service: l[1], role: role[k] || '', etat: actives > 0 ? 'Actif' : v > 0 ? 'En veille' : 'Supprimé', detail: n > 1 ? { total: n, actives, veille: v, supprimees: su } : undefined });
+  }
+  return { at: Date.now(), abonne, rows, noms, echecs };
 }
 
 // ======================================================================

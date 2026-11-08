@@ -325,3 +325,27 @@ body:has(.selbar) .toast { bottom: 84px; }
 .vltour-ft { display: flex; gap: 8px; align-items: center; } .vltour-ft .sp { flex: 1; }
 @media (max-width: 900px) { .vlhero { grid-template-columns: 1fr; } .vlhero-how { border-left: 0; padding-left: 0; } }
 @media (prefers-reduced-motion: reduce) { .vlocal, .vlstep, .vlrow, .vltodo-item, .vlhero, .pill.vlst.pulse, .vlsimres.flash { animation: none !important; } .vltour, .vltour-spot, .vltour-card, .vlkpis .vlt { transition: none !important; } }
+
+/* ---- 6.1 : mise à jour en cours, compte impots.gouv, dettes fiscales, CA par établissement ---- */
+.runblock { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; box-shadow: var(--sh); }
+.page.anim .runblock { animation: ac-pagein .3s var(--ease-out) both; }
+.rb-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13.5px; margin-bottom: 8px; }
+.rb-ico { display: inline-flex; color: var(--accent); } .rb-ico svg { width: 16px; height: 16px; animation: rb-spin 1.6s linear infinite; }
+.rb-phase { color: var(--ink2); font-variant-numeric: tabular-nums; }
+.rb-eta { margin-left: auto; font-weight: 600; color: var(--accent-d); font-variant-numeric: tabular-nums; }
+.runblock .bar { height: 10px; } .runblock .bar > i { transition: width .6s var(--ease-out); background: linear-gradient(90deg, var(--accent), #3B6BC4); }
+.rb-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
+@keyframes rb-spin { to { transform: rotate(360deg); } }
+.topbar .compte { display: inline-flex; align-items: center; gap: 6px; } .topbar .compte select { font-size: 13px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); max-width: 220px; }
+.hchip u { text-decoration: none; font-weight: 700; color: var(--accent); }
+.dettes .dettes-phrase { margin: 10px 0 14px; font-size: 14px; color: var(--ink2); }
+.dettes .dettes-phrase b.up { color: var(--bad); } .dettes .dettes-phrase b.ok { color: var(--ok); }
+.dsec { border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+.dsec.bad { border-color: #F3C7C2; background: #FFFBFA; } .dsec.ok { border-color: #CFE6D7; background: #FBFEFC; }
+.dsec-h { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-bottom: 6px; } .dsec-h .muted { font-size: 12.5px; }
+.dsec-h .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.dsec .t td .up, .dsec .t td.up { color: var(--bad); } .dsec .t td.ok { color: var(--ok); }
+.page.anim .dsec { animation: ac-pagein .35s var(--ease-out) both; } .page.anim .dsec:nth-of-type(2) { animation-delay: .06s; } .page.anim .dsec:nth-of-type(3) { animation-delay: .12s; }
+.caetab { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--accent-bg); }
+.caetab-rows { display: flex; flex-direction: column; gap: 6px; } .caetab-rows .btn { align-self: flex-start; margin-top: 4px; }
+@media (prefers-reduced-motion: reduce) { .rb-ico svg, .page.anim .runblock, .page.anim .dsec { animation: none !important; } }

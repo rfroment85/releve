@@ -10,12 +10,24 @@ const ACMCP = (() => {
   // ---- Pseudonymisation (option) : « Client 4F2A » à la place du nom et du SIREN ----
   const pseudo = ACA.pseudo;
 
-  async function ctx() {
+  // Compte impots.gouv demandé par Claude : n° d'abonné, nom donné dans les réglages, ou « tous » ; par défaut, le filtre en cours dans l'application
+  const compteDemande = (S, q) => {
+    if (q === undefined || q === null || q === '') return S.compte || '';
+    const t = String(q).trim().toLowerCase(); if (['tous', 'all', '*'].includes(t)) return '';
+    const comptes = S.comptes || {};
+    const k = Object.keys(comptes).find((ab) => ab === t.replace(/\D/g, '') || (comptes[ab].nom || '').toLowerCase() === t) || Object.keys(comptes).find((ab) => (comptes[ab].nom || '').toLowerCase().includes(t));
+    if (!k) throw new Error(`Compte impots.gouv inconnu : « ${q} ». Comptes connus : ${Object.keys(comptes).map((ab) => (comptes[ab].nom ? comptes[ab].nom + ' (' + ab + ')' : ab)).join(', ') || 'aucun'}.`);
+    return k;
+  };
+  async function ctx(p = {}) {
     const data = await ACDB.loadAll();
     const S = data.settings;
     ACM.setContext({ settings: S, annee: String(ACA.anneeCampagne()), ca: data.ca || {} });
     const scope = S.scope === 'moi' ? 'moi' : undefined;
-    const c = ACA.campagne(data, { annee: ACA.anneeCampagne(), scope });
+    const compte = compteDemande(S, p.compte);
+    const c = ACA.campagne(data, { annee: ACA.anneeCampagne(), scope, compte });
+    const compteLib = (ab) => { const x = (S.comptes || {})[ab]; return x && x.nom ? x.nom : ab; };
+    const comptesDe = (siren) => { const d = data.dossiers.find((x) => x.siren === siren); return d && d.comptes && d.comptes.length ? d.comptes.map(compteLib) : undefined; };
     const anon = !!S.mcpAnon;
     const nomOf = (siren, nom) => anon ? pseudo(siren) : nom;
     const sirenOf = (siren) => anon ? undefined : siren;
@@ -33,7 +45,7 @@ const ACMCP = (() => {
       const exact = sirens.filter((s) => norm(noms[s]) === n); if (exact.length) return exact;
       return sirens.filter((s) => norm(noms[s]).includes(n));
     };
-    return { data, S, c, anon, nomOf, sirenOf, resolve, noms };
+    return { data, S, c, anon, nomOf, sirenOf, resolve, noms, compte, compteLib, comptesDe };
   }
   // En mode masqué, l'identifiant d'une action ne doit pas contenir le SIREN : il est remplacé par le code du pseudonyme
   const idOut = (X, t) => X.anon ? String(t.id).split(t.siren).join(pseudo(t.siren).replace('Client ', '')) : t.id;
@@ -50,11 +62,13 @@ const ACMCP = (() => {
   // ---- Outils ----
   const vlCache = {}, vlErreurs = {};
   const tools = {
-    async resume() {
-      const X = await ctx(), c = X.c, open = c.taches.filter((t) => !t.done && !t.snoozed);
+    async resume(p = {}) {
+      const X = await ctx(p), c = X.c, open = c.taches.filter((t) => !t.done && !t.snoozed);
       const last = X.data.runs[0];
+      const comptes = Object.entries(X.S.comptes || {});
       return {
-        campagne: c.annee, perimetre: X.S.scope === 'moi' ? 'mon portefeuille' : 'tout le cabinet', noms_masques: X.anon, ...(X.anon ? { consigne: 'Noms masqués : quand votre réponse cite des clients, appelez afficher_dans_releve avec la réponse complète pour que l’utilisateur la lise avec les vrais noms.' } : {}),
+        campagne: c.annee, perimetre: X.S.scope === 'moi' ? 'mon portefeuille' : 'tout le cabinet', noms_masques: X.anon,
+        ...(comptes.length > 1 || X.compte ? { compte_impots_gouv: X.compte ? X.compteLib(X.compte) : 'tous les comptes', comptes_connus: comptes.map(([ab, x]) => ({ abonne: ab, nom: x.nom || undefined, dossiers: X.data.dossiers.filter((d) => (d.comptes || []).includes(ab)).length })) } : {}), ...(X.anon ? { consigne: 'Noms masqués : quand votre réponse cite des clients, appelez afficher_dans_releve avec la réponse complète pour que l’utilisateur la lise avec les vrais noms.' } : {}),
         derniere_mise_a_jour: last ? new Date(last.at).toLocaleString('fr-FR') : 'aucune',
         avis: { total: c.avis.length, annee_N: c.N.length, clients: new Set(c.N.map((a) => a.siren)).size },
         evolution_a_perimetre_comparable: c.tot.n1 ? { annee_N_1: Math.round(c.tot.n1), annee_N: Math.round(c.tot.n), pct: Math.round((c.tot.n / c.tot.n1 - 1) * 1000) / 10 } : null,
@@ -65,7 +79,7 @@ const ACMCP = (() => {
       };
     },
     async lister_actions(p = {}) {
-      const X = await ctx();
+      const X = await ctx(p);
       let l = X.c.taches.filter((t) => (p.inclure_faites ? true : !t.done && !t.snoozed));
       if (p.categorie) { const q = p.categorie.toLowerCase(); l = l.filter((t) => t.cat === q || catTitre(X.c, t.cat).toLowerCase().includes(q)); }
       if (p.client) { const s = new Set(X.resolve(p.client)); l = l.filter((t) => s.has(t.siren)); }
@@ -74,7 +88,7 @@ const ACMCP = (() => {
       return { total: l.length, affichees: Math.min(l.length, lim), categories: X.c.CATS.map((k) => k.titre), actions: l.slice(0, lim).map((t) => taskOut(X, t)) };
     },
     async lister_clients(p = {}) {
-      const X = await ctx(), m = new Map();
+      const X = await ctx(p), m = new Map();
       for (const a of X.c.N) {
         const o = m.get(a.siren) || { siren: a.siren, nom: a.nom, collab: a.collab, tf: 0, cfe: 0, n: 0, n1: 0, prel: new Set(), communes: new Set() };
         if (a.taxe === 'TF') o.tf += a.m; else o.cfe += a.m;
@@ -83,7 +97,7 @@ const ACMCP = (() => {
         m.set(a.siren, o);
       }
       const open = X.c.taches.filter((t) => !t.done && !t.snoozed);
-      let l = [...m.values()].map((o) => ({ client: X.nomOf(o.siren, o.nom), siren: X.sirenOf(o.siren), collaborateur: o.collab || undefined, taxe_fonciere: Math.round(o.tf), cfe: Math.round(o.cfe), evolution_pct: o.n1 ? Math.round((o.n / o.n1 - 1) * 1000) / 10 : null, paiement: [...o.prel].join(', '), communes: [...o.communes].join(', '), actions_ouvertes: open.filter((t) => t.siren === o.siren).length }));
+      let l = [...m.values()].map((o) => ({ client: X.nomOf(o.siren, o.nom), siren: X.sirenOf(o.siren), collaborateur: o.collab || undefined, compte_impots_gouv: Object.keys(X.S.comptes || {}).length > 1 ? X.comptesDe(o.siren) : undefined, taxe_fonciere: Math.round(o.tf), cfe: Math.round(o.cfe), evolution_pct: o.n1 ? Math.round((o.n / o.n1 - 1) * 1000) / 10 : null, paiement: [...o.prel].join(', '), communes: [...o.communes].join(', '), actions_ouvertes: open.filter((t) => t.siren === o.siren).length }));
       if (p.recherche) { const q = p.recherche.toLowerCase(); l = l.filter((x) => `${x.client} ${x.siren || ''} ${x.communes} ${x.collaborateur || ''}`.toLowerCase().includes(q)); }
       if (p.commune) { const q = p.commune.toLowerCase(); l = l.filter((x) => x.communes.toLowerCase().includes(q)); }
       if (p.hausse_min_pct !== undefined) l = l.filter((x) => x.evolution_pct !== null && x.evolution_pct >= p.hausse_min_pct);
@@ -93,20 +107,26 @@ const ACMCP = (() => {
       return { total: l.length, clients: l.slice(0, lim) };
     },
     async fiche_client(p = {}) {
-      const X = await ctx(), s = unClient(X, p.client);
+      const X = await ctx({ compte: 'tous' }), s = unClient(X, p.client);
       const N = X.c.N.filter((a) => a.siren === s);
       const info = (X.S.correspondance || {})[s] || {};
+      const situ = (X.c.situation || {})[s];
       return {
-        client: X.nomOf(s, X.noms[s]), siren: X.sirenOf(s), code_dossier: X.anon ? undefined : info.code || undefined, collaborateur: info.collaborateur || undefined, email_connu: !!info.email,
+        client: X.nomOf(s, X.noms[s]), siren: X.sirenOf(s), code_dossier: X.anon ? undefined : info.code || undefined, collaborateur: info.collaborateur || undefined, email_connu: !!info.email, compte_impots_gouv: X.comptesDe(s),
         avis_annee_N: N.map((a) => ({
           impot: TAXE_LABEL[a.taxe] + (a.acompte ? ' (acompte)' : ''), commune: a.commune, montant: Math.round(a.m), montant_N_1: a.n1 ? Math.round(a.n1.m) : null, evolution_pct: a.n1 ? Math.round(a.d.pct * 10) / 10 : null,
-          paiement: a.paiement, date_limite: a.dateLimite, analyse: a.d.verdict || undefined,
+          paiement: a.paiement, etat_paiement: a.etatPaiement === 'paye' ? 'payé' : a.etatPaiement === 'impaye' ? 'non payé (dans la dette fiscale)' : a.etatPaiement === 'inconnu' ? 'à confirmer' : undefined, date_limite: a.dateLimite, analyse: a.d.verdict || undefined,
           decomposition: a.n1 && a.taxe === 'TF' ? { effet_taux: Math.round(a.d.taux), effet_bases: Math.round(a.d.bases), biens_nouveaux: Math.round(a.d.nouveaux), frais_et_arrondis: Math.round(a.d.autres) } : undefined,
           collectivites: a.taxe === 'TF' && a.d.lignes.length ? a.d.lignes.map((l) => ({ collectivite: l.nom, taux_N_1: l.tN1, taux_N: l.tN, cotisation_N_1: Math.round(l.cN1), cotisation_N: Math.round(l.cN) })) : undefined,
           controle_cfe: a.cfe ? { base_minimum: a.cfe.bm ? a.cfe.bmM : null, ca_reference: a.cfe.caRef, plafond_legal: a.cfe.plafond, anomalies: a.cfe.anomalies.map((x) => x.texte), informations: a.cfe.infos } : undefined,
         })),
-        dettes_fiscales: X.c.dettes.filter((r) => r.siren === s).map((r) => ({ impot: r.impot, annee: r.annee, reference: r.reference, date_limite: r.dateLimite, montant_du: r.montantDu, solde: r.solde })),
-        documents_a_payer: X.c.amr.filter((r) => r.siren === s).map((r) => ({ amr: r.amr, montant: r.montant })),
+        dettes_fiscales: situ ? {
+          en_retard: situ.retard.map((l) => ({ impot: l.impot, annee: l.annee, commune: l.commune || undefined, reference: l.reference, date_limite: l.dateLimite || undefined, du_a_l_origine: Math.round(l.montant), majoration_constatee: l.majoration ? Math.round(l.majoration) : undefined, exigible: Math.round(l.exigible), avis_de_mise_en_recouvrement: l.amr || undefined })),
+          total_en_retard: Math.round(situ.totalRetard),
+          a_venir: situ.aVenir.map((l) => ({ impot: l.impot, annee: l.annee, reference: l.reference, date_limite: l.dateLimite, montant: Math.round(l.montant) })),
+          payees_recemment: situ.payees.map((l) => ({ impot: l.impot, annee: l.annee, montant: Math.round(l.montant), date: l.date })),
+        } : { en_retard: [], total_en_retard: 0, a_venir: [], payees_recemment: [] },
+        paiements_impots_locaux: (((X.c.paiements || {})[s] || {}).rows || []).map((r) => ({ impot: r.impot, periode: r.periode, commune: r.commune, date: r.datePaiement, montant: Number(String(r.montant).replace(/\s/g, '').replace(',', '.')) || 0, nature: r.nature })),
         actions: X.c.taches.filter((t) => t.siren === s).map((t) => taskOut(X, t)),
         valeur_locative: (() => { const L = ((X.data.vlResume && X.data.vlResume.locaux) || []).filter((l) => l.siren === s); return L.length ? { locaux_controles: L.length, trop_paye_probable_par_an: L.filter((l) => l.statut === 'TROP').reduce((a, l) => a + l.enjeu, 0), trop_paye_possible_par_an: L.filter((l) => l.statut === 'PISTE').reduce((a, l) => a + l.enjeu, 0), locaux: L.map((l) => ({ adresse: l.adresse, statut: l.libelle, enjeu_par_an: l.enjeu || undefined, explication: l.phrase })), detail: 'outil valeur_locative' } : undefined; })(),
         notes: (X.data.cnotes[s] || []).map((n) => `${new Date(n.at).toLocaleDateString('fr-FR')} : ${n.text}`),
