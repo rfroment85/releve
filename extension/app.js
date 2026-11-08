@@ -1217,6 +1217,6 @@ chrome.runtime.sendMessage({ type: 'ac:getState' }).then((r) => { A.run = r && r
 ACUP.check().then((u) => {
   if (!u.available) return;
   const b = document.createElement('div'); b.className = 'updbar';
-  b.innerHTML = `<b>Nouvelle version ${esc(u.version)} disponible</b>${u.notes ? `<span>${esc(u.notes)}</span>` : ''}<a href="${esc(u.zip)}" target="_blank">Télécharger</a><a href="${esc(u.guide)}" target="_blank">Comment mettre à jour (1 min)</a>`;
+  b.innerHTML = `<b>Nouvelle version ${esc(u.version)} disponible</b>${u.notes ? `<span>${esc(u.notes)}</span>` : ''}<span class="small">Vos données sont conservées : remplacez les fichiers, ne supprimez pas l’extension.</span><a href="${esc(u.zip)}" target="_blank">Télécharger</a><a href="${esc(u.guide)}" target="_blank">Comment mettre à jour (1 min)</a>`;
   $('.main').prepend(b);
 });

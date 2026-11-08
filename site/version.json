@@ -1,1 +1,6 @@
-{"version": "6.0.0", "date": "2026-11-08", "notes": "Valeur locative des locaux professionnels : lecture de « Gérer mes biens immobiliers », calcul au tarif officiel (101 départements), planchonnement reconstitué, cadastre et photo aérienne IGN, statuts en français courant (trop payé probable / possible, question au client, rien à signaler) avec l’enjeu par an, brouillons de réclamation, de question au client et de demande de relevé de propriété, intégration à la liste de travail, visite guidée.", "zip": "https://releveavis.netlify.app/Releve.zip"}
+{
+"version": "6.0.0",
+"date": "2026-11-08",
+"notes": "Valeur locative des locaux professionnels : lecture de « Gérer mes biens immobiliers », calcul au tarif officiel (101 départements), planchonnement reconstitué, cadastre et photo aérienne IGN, statuts en français courant (trop payé probable / possible, question au client, rien à signaler) avec l’enjeu par an, brouillons de réclamation, de question au client et de demande de relevé de propriété, intégration à la liste de travail, visite guidée. Vos notes et votre travail sont conservés : remplacez les fichiers du dossier Releve, ne supprimez pas l’extension dans Chrome.",
+"zip": "https://releveavis.netlify.app/Releve.zip"
+}

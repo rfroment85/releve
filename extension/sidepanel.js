@@ -253,4 +253,4 @@ chrome.tabs.onActivated.addListener(recheck);
 chrome.tabs.onRemoved.addListener((id) => { if (V.tab && id === V.tab.id) recheck(); });
 window.addEventListener('focus', recheck);
 check();
-ACUP.check().then((u) => { if (!u.available) return; $('#upd').innerHTML = `<div class="upd"><b>Nouvelle version ${esc(u.version)} disponible</b>${u.notes ? `<span>${esc(u.notes)}</span>` : ''}<div class="l"><a class="btn sm" href="${esc(u.zip)}" target="_blank">Télécharger</a><a class="btn sm sec" href="${esc(u.guide)}" target="_blank">Comment mettre à jour (1 min)</a></div></div>`; });
+ACUP.check().then((u) => { if (!u.available) return; $('#upd').innerHTML = `<div class="upd"><b>Nouvelle version ${esc(u.version)} disponible</b>${u.notes ? `<span>${esc(u.notes)}</span>` : ''}<span class="small">Vos données sont conservées : remplacez les fichiers, ne supprimez pas l’extension.</span><div class="l"><a class="btn sm" href="${esc(u.zip)}" target="_blank">Télécharger</a><a class="btn sm sec" href="${esc(u.guide)}" target="_blank">Comment mettre à jour (1 min)</a></div></div>`; });
