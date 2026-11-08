@@ -1,11 +1,13 @@
 // Relève — orchestration de la collecte dans l'onglet impots.gouv (script de contenu)
 // Reçoit les ordres du volet latéral, lit les dossiers, transmet avis, PDF et dettes au service d'arrière-plan qui les range sur le poste.
 'use strict';
-
 const AC = { running: false, stop: false, total: 0, done: 0, current: '' };
 
 const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
-const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => null);
+// Après un rechargement de l'extension, l'ancien script resté dans un onglet ouvert n'a plus accès à l'extension (« Extension context invalidated ») :
+// l'appel échoue alors en silence au lieu de remplir le journal d'erreurs de chrome://extensions (le nouveau script, injecté au rechargement, prend le relais)
+const vivant = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch { return false; } };
+const send = (msg) => { if (!vivant()) return Promise.resolve(null); try { return chrome.runtime.sendMessage(msg).catch(() => null); } catch { return Promise.resolve(null); } };
 
 function pageState() {
   const t = document.body ? document.body.innerText : '';
@@ -31,12 +33,18 @@ function enFenetre(taxeKey, now = new Date()) {
   return (md >= 501 && md <= 630) || (md >= 1020 && md <= 1231);
 }
 const H = 3600e3;
+// Période où les paiements d'impôts locaux valent la peine d'être lus : autour des échéances (acompte de CFE 15/06, taxe foncière 15/10, solde de CFE 15/12) et les semaines qui suivent
+function enPeriodePaiement(now = new Date()) { const md = (now.getMonth() + 1) * 100 + now.getDate(); return md >= 1001 || md <= 228 || (md >= 615 && md <= 731); }
 // Faut-il relire cette partie du dossier ? (mode rapide ; le mode complet relit tout)
-function aLire(part, k, now) {
+// cycle : début de la mise à jour en cours si elle a été interrompue (une partie lue depuis n'est pas relue, même après 20 h, pendant 7 jours)
+function aLire(part, k, now, cycle = 0) {
   if (!k) return true;
   const at = k[part + 'At'] || 0, age = now - at;
-  if (part === 'amr') return age > (k.amrIndispo ? 30 * 24 * H : 7 * 24 * H);
+  if (cycle && at >= cycle && age < 7 * 24 * H) return false; // lu pendant la mise à jour interrompue : reprise sans relecture
+  if (part === 'amr') return age > (k.amrIndispo ? 30 * 24 * H : k.amrN > 0 ? 20 * H : 7 * 24 * H); // documents à payer : relus chaque jour tant qu'il y en a (un paiement les fait disparaître)
   if (part === 'dettes') return age > 20 * H;
+  if (part === 'pay') return age > 20 * H;
+  if (part === 'gmbi') return age > 30 * 24 * H; // biens immobiliers : les surfaces et catégories bougent rarement
   if (age < 20 * H) return false; // déjà lu aujourd'hui (reprise après une pause)
   const vide = !((k.annees || {})[part.toUpperCase()] || []).length;
   if (vide && !enFenetre(part.toUpperCase()) && age < 30 * 24 * H) return false;
@@ -49,20 +57,49 @@ const autreDossier = (inf) => { const c = (inf && inf.controle) || ''; return /S
 async function collect(opts) {
   AC.running = true; AC.stop = false; AC.done = 0; AC.total = 0; AC.current = '';
   const t0 = Date.now(), now = Date.now();
-  const stats = { dossiers: 0, avis: 0, nouveaux: 0, pdf: 0, erreurs: 0, dettes: 0, amr: 0, pagesEvitees: 0, requetes: 0 };
+  const stats = { dossiers: 0, avis: 0, nouveaux: 0, pdf: 0, erreurs: 0, dettes: 0, amr: 0, biens: 0, locaux: 0, pagesEvitees: 0, requetes: 0 };
   const annee = String(opts.annee), anneeN1 = String(opts.annee - 1);
   const taxes = (opts.taxes || ['TF', 'CFE']).map((k) => TAXES[k]).filter(Boolean);
   const pause = Math.max(0, opts.delay ?? 60);
   const complet = !!opts.complet;
   try {
     const kr = (await send({ type: 'ac:getKnown' })) || {};
-    const known = new Set(kr.ids || []), kd = kr.dossiers || {};
+    const known = new Set(kr.ids || []), kd = kr.dossiers || {}, cycle = complet ? 0 : (kr.cycleStart || 0);
     let token = await getToken();
+    const compte = abonneCourant(); // n° d'abonné de l'espace connecté : chaque donnée lue est rattachée à ce compte
     send({ type: 'ac:progress', phase: 'liste', done: 0, total: 0, label: 'Lecture de la liste des dossiers…' });
-    let dossiers = opts.dossiers && opts.dossiers.length ? opts.dossiers : await listDossiers(token, (p, n) => send({ type: 'ac:progress', phase: 'liste', done: p, total: n, label: `Liste des dossiers : page ${p} / ${n}` }));
-    if (!opts.dossiers || !opts.dossiers.length) await send({ type: 'ac:dossierList', list: dossiers });
+    // Liste gardée en mémoire (reprise rapide) : réutilisée seulement si elle correspond à l'espace connecté maintenant
+    // (sinon, après un changement de compte impots.gouv, on lirait les dossiers de l'espace précédent)
+    let dossiers = null;
+    // Un seul client (bouton « Actualiser » de la fiche) : on vérifie qu'il est bien dans l'espace connecté, sans lire toute la liste
+    if (opts.unique) {
+      const u = opts.unique;
+      const h = await fetchText(`${BASE}/mire/afficherSelectionDossier.do?idth=consulter.avis.cfe&siren=${encodeURIComponent(u.siren)}&token=${token}`);
+      const trouve = extractDossiers(h).find((x) => x.siren === u.siren);
+      if (trouve) dossiers = [{ siren: u.siren, nom: trouve.nom || u.nom || u.siren }];
+      else {
+        const m = await dossierDeLEspace().catch(() => null);
+        if (m && m.siren === u.siren) dossiers = [{ ...m, nom: u.nom || m.nom || u.siren }];
+        else throw new Error(`Ce client n’est pas dans l’espace professionnel connecté${compte ? ' (compte ' + compte + ')' : ''} : connectez-vous à l’espace qui le suit`);
+      }
+    }
+    if (!dossiers && opts.dossiers && opts.dossiers.length) { try { if (await listeToujoursValable(token, opts.dossiers)) dossiers = opts.dossiers; } catch (e) { if (/Session expirée/.test(e.message)) throw e; } }
+    if (!dossiers) {
+      try { dossiers = await listDossiers(token, (p, n) => send({ type: 'ac:progress', phase: 'liste', done: p, total: n, label: `Liste des dossiers : page ${p} / ${n}` })); }
+      catch (e) { if (/Session expirée/.test(e.message)) throw e; dossiers = []; }
+      // Espace d'une entreprise (codes du client) : pas de liste, un seul dossier, celui affiché
+      if (!dossiers.length) { const m = await dossierDeLEspace(); if (m) { if (!m.nom) { m.nom = 'Entreprise ' + m.siren; m.nomProvisoire = true; } dossiers = [m]; send({ type: 'ac:log', level: 'info', text: `Espace d'une seule entreprise : SIREN ${m.siren}` }); } }
+      if (!dossiers.length) throw new Error('Aucun dossier trouvé dans cet espace professionnel (service « Avis CFE » sans dossier rattaché ?)');
+      await send({ type: 'ac:dossierList', list: dossiers, compte });
+    }
     if (opts.scope && opts.scope.length) { const sc = new Set(opts.scope); dossiers = dossiers.filter((d) => sc.has(d.siren)); }
     AC.total = dossiers.length;
+    // Ce qu'il reste réellement à lire : les dossiers déjà frais passent en une fraction de seconde (reprise visible, temps restant honnête)
+    const besoin = (d) => { const k = complet ? null : kd[d.siren]; return !k || taxes.some((t) => aLire(t.key.toLowerCase(), k, now, cycle)) || (opts.dettes !== false && aLire('dettes', k, now, cycle)) || (opts.amr !== false && aLire('amr', k, now, cycle)) || (opts.biens !== false && aLire('gmbi', k, now, cycle)) || (opts.paiements !== false && enPeriodePaiement() && aLire('pay', k, now, cycle)); };
+    const aFaire = dossiers.filter(besoin).length, dejaLus = dossiers.length - aFaire;
+    let faits = 0, moyenne = 0, echecsPay = 0; // durée moyenne lissée d'un dossier réellement lu ; échecs consécutifs de lecture des paiements
+    const progres = (d, extra) => { const restants = aFaire - faits, eta = faits >= 3 && moyenne ? Math.round(moyenne * restants / 1000) : null; send({ type: 'ac:progress', phase: 'dossiers', done: AC.done, total: dossiers.length, dejaLus, aFaire, faits, label: d ? d.nom + (extra ? ' · ' + extra : '') : '', eta, compte }); };
+    if (dejaLus) send({ type: 'ac:log', level: 'info', text: `Reprise : ${dejaLus} dossier${dejaLus > 1 ? 's' : ''} déjà à jour, ${aFaire} à lire` });
 
     // Lecture d'un impôt pour le dossier sélectionné : tableau, puis PDF des avis absents du poste
     const lireTaxe = async (taxe, d, out) => {
@@ -77,6 +114,7 @@ async function collect(opts) {
         const id = avisId(taxe, d.siren, row);
         const record = { id, taxe: taxe.key, siren: d.siren, nom: d.nom, annee: row.anneeImposition, commune: row.commune, departement: row.departement, nic: row.nic, reference: row.reference, role: row.role, type: row.type, dateLimite: row.dateLimite, dateRecouvrement: row.dateRecouvrement, montant: numVal(row.montant), payer: !!row.payer, acompte: isAcompte(row), seenAt: Date.now() };
         stats.avis++;
+        record.compte = compte;
         if (known.has(id)) { await send({ type: 'ac:avis', record }); continue; }
         // Téléchargement contrôlé : un PDF dont la référence (ou le SIREN) ne correspond pas à la ligne vient d'un autre dossier
         // (dossier changé côté site pendant la lecture) : on resélectionne le dossier et on recommence, sans jamais le garder.
@@ -84,14 +122,14 @@ async function collect(opts) {
           if (r.first !== curFirst) { const p = await ajaxPage(r.first, vs, taxe); vs = p.vs; curFirst = r.first; }
           const b = await downloadPdf(r.linkId, vs, taxe.url);
           let inf;
-          try { inf = parseAvisPdf(taxe, await pdfText(b), d, r); } catch (e) { inf = { controle: 'Lecture impossible : ' + e.message, prelevement: 'À VÉRIFIER' }; }
+          try { inf = parseAvisPdf(taxe, await pdfText(b), d.nomProvisoire ? { ...d, nom: '' } : d, r); } catch (e) { inf = { controle: 'Lecture impossible : ' + e.message, prelevement: 'À VÉRIFIER' }; }
           return { bytes: b, infos: inf };
         };
         let cible = row, { bytes, infos } = await telecharger(row);
         for (let essai = 0; autreDossier(infos) && essai < 2 && !AC.stop; essai++) {
           send({ type: 'ac:log', level: 'warn', text: `${d.nom} : le site a renvoyé l'avis d'un autre dossier, nouvel essai` });
           await sleep(600 * (essai + 1));
-          await selectDossier(token, d.siren);
+          if (!d.mono) await selectDossier(token, d.siren);
           const g = await getAvis(taxe);
           if (g.siren && g.siren !== d.siren) continue;
           vs = g.vs; curFirst = g.curFirst;
@@ -111,15 +149,26 @@ async function collect(opts) {
         known.add(id); stats.pdf++; stats.nouveaux++;
       }
     };
+    // Coupure réseau : on attend le retour de la connexion (jusqu'à 10 minutes) au lieu d'arrêter la mise à jour
+    const attendreReseau = async () => {
+      const debut = Date.now();
+      while (Date.now() - debut < 10 * 60e3 && !AC.stop) {
+        send({ type: 'ac:progress', phase: 'attente', done: AC.done, total: dossiers.length, dejaLus, aFaire, faits, label: `Connexion interrompue : nouvelle tentative dans 15 s (${Math.round((Date.now() - debut) / 1000)} s)`, eta: null, compte });
+        await sleep(15000);
+        try { const r = await fetch(BASE + '/mire/accueil.do', { credentials: 'include', redirect: 'manual' }); if (r.type === 'opaqueredirect') throw new Error('Session expirée : reconnectez-vous à l’espace professionnel'); if (r.ok) { send({ type: 'ac:log', level: 'info', text: 'Connexion rétablie, la mise à jour reprend' }); return true; } } catch (e) { if (/Session expirée/.test(e.message)) throw e; }
+      }
+      throw new Error('Réseau indisponible pendant plus de 10 minutes : relancez la mise à jour quand la connexion sera revenue (les dossiers déjà lus ne seront pas relus)');
+    };
     // Une partie avec reprise : en cas d'échec (sauf session expirée), on resélectionne le dossier et on recommence
     const avecReprise = async (label, d, fn) => {
       for (let essai = 0; ; essai++) {
         try { return await fn(); } catch (e) {
           if (/Session expirée/.test(e.message)) throw e;
+          if (/Réseau indisponible|Failed to fetch|NetworkError/.test(e.message)) { await attendreReseau(); essai--; token = await getToken(); if (!d.mono) try { await selectDossier(token, d.siren); } catch {} continue; }
           if (essai >= 2) { stats.erreurs++; send({ type: 'ac:log', level: 'warn', text: `${d.nom} (${label}) : ${e.message}` }); return null; }
           await sleep(800 * (essai + 1));
           if (/CSRF/.test(e.message)) token = await getToken();
-          try { await selectDossier(token, d.siren); } catch (e2) { if (/Session expirée/.test(e2.message)) throw e2; }
+          if (!d.mono) try { await selectDossier(token, d.siren); } catch (e2) { if (/Session expirée/.test(e2.message)) throw e2; }
         }
       }
     };
@@ -128,15 +177,19 @@ async function collect(opts) {
       if (AC.stop) break;
       const d = dossiers[i], k = complet ? null : kd[d.siren];
       AC.done = i; AC.current = d.nom;
-      const elapsed = (Date.now() - t0) / 1000, eta = i > 4 ? Math.round(elapsed / i * (dossiers.length - i)) : null;
-      send({ type: 'ac:progress', phase: 'dossiers', done: i, total: dossiers.length, label: d.nom, eta });
-      const lireT = taxes.filter((t) => aLire(t.key.toLowerCase(), k, now));
-      const lireD = opts.dettes !== false && aLire('dettes', k, now);
-      const lireA = opts.amr !== false && aLire('amr', k, now);
-      stats.pagesEvitees += (taxes.length - lireT.length) + (opts.dettes !== false && !lireD ? 1 : 0) + (opts.amr !== false && !lireA ? 1 : 0);
-      const out = { annees: { ...((kd[d.siren] || {}).annees || {}) } };
-      if (lireT.length || lireD || lireA) {
-        const ok = await avecReprise('sélection du dossier', d, () => selectDossier(token, d.siren));
+      const lireT = taxes.filter((t) => aLire(t.key.toLowerCase(), k, now, cycle));
+      const lireD = opts.dettes !== false && aLire('dettes', k, now, cycle);
+      const lireA = opts.amr !== false && aLire('amr', k, now, cycle);
+      const lireB = opts.biens !== false && aLire('gmbi', k, now, cycle);
+      // Paiements d'impôts locaux : autour des échéances, pour les dossiers qui ont (ou peuvent avoir) un avis de l'année
+      const aDesAvisN = !k || lireT.length || Object.values((k.annees || {})).some((l) => (l || []).includes(annee));
+      const lireP = opts.paiements !== false && (opts.unique || enPeriodePaiement()) && aDesAvisN && aLire('pay', k, now, cycle);
+      stats.pagesEvitees += (taxes.length - lireT.length) + (opts.dettes !== false && !lireD ? 1 : 0) + (opts.amr !== false && !lireA ? 1 : 0) + (opts.biens !== false && !lireB ? 1 : 0);
+      const out = { annees: { ...((kd[d.siren] || {}).annees || {}) }, compte };
+      const lit = lireT.length || lireD || lireA || lireB || lireP, tDossier = Date.now();
+      if (lit) progres(d);
+      if (lit) {
+        const ok = d.mono ? true : await avecReprise('sélection du dossier', d, () => selectDossier(token, d.siren));
         if (ok === null) { /* dossier non sélectionnable : on passe au suivant */ }
         else {
           // Les pages du dossier sont lues en parallèle (le dossier reste sélectionné côté serveur)
@@ -146,18 +199,39 @@ async function collect(opts) {
           const parts = [(async () => { for (const t of lireT) { if (AC.stop) break; await avecReprise(t.label, d, () => lireTaxe(t, d, out)); } })()];
           if (lireD) parts.push(avecReprise('dettes fiscales', d, async () => { dt = await getDettes(); out.dettesAt = Date.now(); stats.dettes += dt.rows.length; }));
           await Promise.all(parts);
-          if (lireA && !AC.stop) await avecReprise('documents à payer', d, async () => { const a = await getAmr(token, d.siren); token = a.token; am = a; out.amrAt = Date.now(); out.amrIndispo = a.indispo || ''; stats.amr += a.rows.length; });
-          if (dt || am) await send({ type: 'ac:dettes', siren: d.siren, nom: d.nom, rows: dt ? dt.rows : null, total: dt ? numVal(dt.total) : null, amr: am ? am.rows : null, amrIndispo: am ? (am.indispo || '') : undefined });
+          if (lireA && !AC.stop) await avecReprise('documents à payer', d, async () => { const a = await getAmr(token, d.siren); token = a.token; am = a; out.amrAt = Date.now(); out.amrIndispo = a.indispo || ''; out.amrN = a.rows.length; stats.amr += a.rows.length; });
+          if (dt || am) await send({ type: 'ac:dettes', siren: d.siren, nom: d.nom, rows: dt ? dt.rows : null, total: dt ? numVal(dt.total) : null, amr: am ? am.rows : null, amrIndispo: am ? (am.indispo || '') : undefined, compte });
+          // Paiements d'impôts locaux (date, montant, nature) : dit à la source si chaque avis de l'année est payé
+          // (lecture abandonnée pour le reste de la mise à jour après 3 échecs de suite : service absent de cet espace, page changée…)
+          if (lireP && !AC.stop && echecsPay < 3) {
+            const ok = await avecReprise('paiements', d, async () => {
+              const pg = await getPaiements(annee, d.mono ? '' : d.siren);
+              out.payAt = Date.now(); stats.paiements = (stats.paiements || 0) + pg.rows.length;
+              await send({ type: 'ac:paiements', siren: d.siren, nom: d.nom, annee, rows: pg.rows, compte });
+              return true;
+            });
+            echecsPay = ok ? 0 : echecsPay + 1;
+            if (echecsPay === 3) send({ type: 'ac:log', level: 'warn', text: 'Paiements d’impôts locaux illisibles dans cet espace : lecture suspendue pour cette mise à jour (la dette fiscale sert de contrôle)' });
+          }
+          // Biens immobiliers (« Gérer mes biens immobiliers ») : liste des biens et fiche de chaque local professionnel, pour le contrôle de la valeur locative
+          if (lireB && !AC.stop) await avecReprise('biens immobiliers', d, async () => {
+            const g = await getBiens(token, (i, n) => { if (n > 3) progres(d, `locaux ${i}/${n}`); }, Math.min(pause, 120));
+            if (g.siren && g.siren !== d.siren) throw new Error('Dossier courant inattendu (' + g.siren + ')');
+            out.gmbiAt = Date.now(); out.gmbiIndispo = g.indispo || '';
+            stats.biens += g.biens.length; stats.locaux += g.biens.filter((b) => b.pro).length;
+            await send({ type: 'ac:biens', siren: d.siren, nom: d.nom, biens: g.biens, attendues: g.attendues, indispo: g.indispo || '', compte });
+          });
         }
+        faits++; const dt0 = Date.now() - tDossier; moyenne = moyenne ? moyenne * 0.8 + dt0 * 0.2 : dt0;
       }
       await send({ type: 'ac:dossier', siren: d.siren, nom: d.nom, ...out, checkedAt: Date.now() });
       stats.dossiers++;
-      if (pause) await sleep(pause);
+      if (lit && pause) await sleep(pause);
     }
     AC.done = AC.total;
-    await send({ type: 'ac:done', stats, stopped: AC.stop, duree: Math.round((Date.now() - t0) / 1000), annee: opts.annee, scope: opts.scope || null, complet });
+    await send({ type: 'ac:done', stats, stopped: AC.stop, duree: Math.round((Date.now() - t0) / 1000), annee: opts.annee, scope: opts.scope || null, complet, compte, dejaLus, aFaire, unique: opts.unique ? opts.unique.siren : '' });
   } catch (e) {
-    await send({ type: 'ac:error', text: e.message, stats });
+    await send({ type: 'ac:error', text: e.message, stats, session: /Session expirée/.test(e.message) });
   } finally {
     AC.running = false;
   }
@@ -182,7 +256,7 @@ async function bandeau() {
   try {
     if (window.top !== window || document.getElementById('avis-collector-bandeau')) return;
     const siren = siretAffiche(); if (!siren) return;
-    const r = await chrome.runtime.sendMessage({ type: 'ac:siteInfo', siren }).catch(() => null);
+    const r = await send({ type: 'ac:siteInfo', siren });
     if (!r || !r.n) return;
     const host = document.createElement('div'); host.id = 'avis-collector-bandeau';
     host.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483000;';
@@ -196,8 +270,8 @@ async function bandeau() {
       .o{background:#1F3B6E;color:#fff} .x{background:transparent;color:#C9CBD1}
     </style><div class="b"><div class="l"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z"/><path d="M10 13l2 2 4-4"/></svg></div>
       <div class="t"><b>${r.n} action${r.n > 1 ? 's' : ''} pour ce client</b><span>${esc(r.resume)}</span><div class="a"><button class="o">Ouvrir la fiche</button><button class="x">Masquer</button></div></div></div>`;
-    sh.querySelector('.o').onclick = () => chrome.runtime.sendMessage({ type: 'ac:openApp', hash: 'client/' + siren }).catch(() => {});
-    sh.querySelector('.x').onclick = () => { host.remove(); chrome.runtime.sendMessage({ type: 'ac:hideBanner', siren }).catch(() => {}); };
+    sh.querySelector('.o').onclick = () => { if (!vivant()) { host.remove(); return; } send({ type: 'ac:openApp', hash: 'client/' + siren }); };
+    sh.querySelector('.x').onclick = () => { host.remove(); send({ type: 'ac:hideBanner', siren }); };
     document.documentElement.appendChild(host);
   } catch {}
 }

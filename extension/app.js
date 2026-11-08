@@ -21,11 +21,29 @@ const auteurLien = () => `<a href="${AUTEUR.url}" target="_blank" rel="noopener"
 const jourISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const calme = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const A = { sel: new Set(), data: null, S: null, c: null, coll: null, q: '', showDone: false, sort: { k: 'open', dir: -1 }, expanded: new Set(), openCom: new Set(), mail: null };
+const CGU_URL = 'https://releveavis.netlify.app/conditions.html';
+// Comptes impots.gouv (n° d'abonné) vus sur ce poste : nom libre donné dans les réglages, sinon le numéro
+const comptesConnus = () => Object.entries((A.S && A.S.comptes) || {}).sort((a, b) => (a[1].nom || a[0]).localeCompare(b[1].nom || b[0], 'fr'));
+const compteLib = (ab) => { const c = ((A.S && A.S.comptes) || {})[ab]; return c && c.nom ? c.nom : ab ? 'Compte ' + ab : ''; };
+const dur = (sec) => { sec = Math.max(30, Math.round(sec)); if (sec < 90) return 'environ 1 minute'; const m = Math.round(sec / 60); if (m < 60) return `environ ${m} minutes`; const h = Math.floor(m / 60), r = Math.round((m % 60) / 5) * 5; return `environ ${h} h${r ? ' ' + String(r).padStart(2, '0') : ''}`; };
+// Mise à jour en cours : bloc d'avancement en tête de page (reprise visible, temps restant calculé sur les dossiers réellement à lire)
+function runBlock() {
+  const r = A.run; if (!r || !r.running) return '';
+  if (r.opts && r.opts.unique) return `<div class="runblock" id="runBlock"><div class="rb-head"><span class="rb-ico">${IC.refresh}</span><b>Actualisation en cours</b><span class="rb-phase">${esc(r.label || '')}</span><span class="rb-eta">quelques secondes</span></div><div class="bar"><i style="width:${Math.min(95, 20 + (Date.now() - (r.startedAt || Date.now())) / 150)}%"></i></div></div>`;
+  const total = r.total || 0, deja = r.dejaLus || 0, faits = r.faits || 0, aFaire = r.aFaire || 0, avance = Math.min(total, deja + faits);
+  const pct = total ? Math.round(avance / total * 100) : (r.phase === 'liste' ? 3 : 0);
+  const phase = r.phase === 'liste' ? 'Lecture de la liste des dossiers' : r.phase === 'attente' ? 'Connexion interrompue, en attente' : `${avance.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} dossiers`;
+  return `<div class="runblock" id="runBlock"><div class="rb-head"><span class="rb-ico">${IC.refresh}</span><b>Mise à jour en cours</b><span class="rb-phase">${phase}</span>${deja ? `<span class="pill ok" title="Dossiers lus lors de la mise à jour interrompue ou plus tôt aujourd’hui : non relus">Reprise : ${deja.toLocaleString('fr-FR')} déjà à jour</span>` : ''}<span class="rb-eta">${r.eta ? `Encore ${dur(r.eta)}` : aFaire && faits < 3 ? 'Estimation dans un instant…' : ''}</span></div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="rb-foot"><span class="small muted">${esc(r.label || '')}</span><span class="small muted">${r.nouveaux ? plural(r.nouveaux, 'nouvel avis', 'nouveaux avis') + ' · ' : ''}${aFaire ? `${faits.toLocaleString('fr-FR')} / ${aFaire.toLocaleString('fr-FR')} dossiers à lire` : ''}${r.compte && comptesConnus().length > 1 ? ' · ' + esc(compteLib(r.compte)) : ''}</span></div></div>`;
+}
+function majRunBlock() { const e = $('#runBlock'); const html = runBlock(); if (e && html) { const b = e.querySelector('.bar > i'), w = b ? b.style.width : null; e.outerHTML = html; const nb = $('#runBlock .bar > i'); if (nb && w && !calme()) { nb.style.width = w; nb.getBoundingClientRect(); requestAnimationFrame(() => { nb.style.width = runBlockWidth(); }); } } else if (!e && html) { const pg = $('#page'); if (pg) pg.insertAdjacentHTML('afterbegin', html); } else if (e && !html) e.remove(); }
+const runBlockWidth = () => { const r = A.run || {}; const total = r.total || 0, av = Math.min(total, (r.dejaLus || 0) + (r.faits || 0)); return (total ? Math.round(av / total * 100) : 0) + '%'; };
 
 // ======================================================================
 // Données
 // ======================================================================
-async function load() { A.data = await ACDB.loadAll(); A.S = A.data.settings; compute(); await loadClaude(); const b = await ACDB.get('meta', 'backupAt'); A.backupAt = b && b.at; A.habil = await ACDB.get('meta', 'habil'); const dl = await ACDB.get('meta', 'dossierList'); A.dossierList = (dl && dl.list) || []; const rc = await ACDB.get('meta', 'raccord'); A.raccord = (rc && rc.data) || {}; }
+async function load() { A.data = await ACDB.loadAll(); A.S = A.data.settings; compute(); await vlCompute(); compute(); await loadClaude(); const b = await ACDB.get('meta', 'backupAt'); A.backupAt = b && b.at; A.habil = await ACDB.get('meta', 'habil'); const dl = await ACDB.get('meta', 'dossierList'); A.dossierList = (dl && dl.list) || []; const rc = await ACDB.get('meta', 'raccord'); A.raccord = (rc && rc.data) || {}; }
 function scopeSirens() {
   const S = A.S, c = S.correspondance || {};
   const mine = Object.entries(c).filter(([, v]) => S.moi && v.collaborateur === S.moi).map(([k]) => k);
@@ -75,31 +93,35 @@ const { IMPOT_LIB, detteCtx, amrCtx, mailItem, libColl, listeEt, mailDraft, sect
 // Coquille : navigation et barre du haut
 // ======================================================================
 const ROUTES = [
-  { k: 'a-traiter', t: 'À traiter', i: 'list' }, { k: 'demander', t: 'Demander', i: 'chat' }, { k: 'clients', t: 'Clients', i: 'users' }, { k: 'habilitations', t: 'Habilitations', i: 'shield' }, { k: 'collectivites', t: 'Collectivités', i: 'building' },
+  { k: 'a-traiter', t: 'À traiter', i: 'list' }, { k: 'demander', t: 'Demander', i: 'chat' }, { k: 'clients', t: 'Clients', i: 'users' }, { k: 'dettes', t: 'Dettes fiscales', i: 'euro' }, { k: 'valeur-locative', t: 'Valeur locative', i: 'ruler' }, { k: 'habilitations', t: 'Habilitations', i: 'shield' }, { k: 'collectivites', t: 'Collectivités', i: 'building' },
   { k: 'calendrier', t: 'Calendrier', i: 'cal' }, { k: 'exports', t: 'Exports', i: 'down' }, { k: 'reglages', t: 'Réglages', i: 'gear' },
 ];
 const route = () => { const h = decodeURIComponent(location.hash.slice(1)) || 'a-traiter'; const [p, ...r] = h.split('/'); return { p, arg: r.join('/') }; };
 function savedMinutes() { return A.data.avis.filter((a) => a.hasPdf).length * 2 + Object.values(A.data.tasks).filter((t) => t.status === 'done').length * 3; }
 function shell() {
   const { p } = route(), open = openTasks().length;
+  const nTrop = ((A.data.vlResume && A.data.vlResume.locaux) || []).filter((l) => l.statut === 'TROP' && (!scopeMoi() || scopeSirens().includes(l.siren))).length;
+  const nRetard = Object.values(A.c.situation || {}).filter((x) => x.retard.length).length;
   const m = savedMinutes(), h = Math.floor(m / 60);
   $('#nav').innerHTML = `<div class="brand"><span class="logo">${IC.logo}</span>Relève</div>
-    ${ROUTES.map((r) => `<a href="#${r.k}" class="${p === r.k || (p === 'client' && r.k === 'clients') ? 'on' : ''}">${IC[r.i]} ${r.t}${r.k === 'a-traiter' && open ? `<span class="cnt">${open}</span>` : ''}</a>`).join('')}
+    ${ROUTES.map((r) => `<a href="#${r.k}" class="${p === r.k || (p === 'client' && r.k === 'clients') ? 'on' : ''}">${IC[r.i]} ${r.t}${r.k === 'a-traiter' && open ? `<span class="cnt">${open}</span>` : ''}${r.k === 'valeur-locative' && nTrop ? `<span class="cnt bad" title="${nTrop} local${nTrop > 1 ? 'aux' : ''} : trop payé probable">${nTrop}</span>` : ''}${r.k === 'dettes' && nRetard ? `<span class="cnt bad" title="${nRetard} client${nRetard > 1 ? 's' : ''} avec des sommes en retard">${nRetard}</span>` : ''}</a>`).join('')}
     <div class="sp"></div>
     ${m >= 30 ? `<div class="saved"><span class="tiny muted">Temps économisé cette campagne</span><b class="num">${h ? h + ' h' : m + ' min'}</b><span class="tiny muted">Estimation : 2 min par avis lu et classé à la main</span></div>` : ''}
     ${Object.values(A.data.tasks).filter((t) => t.status || t.note).length >= 10 && (!A.backupAt || Date.now() - A.backupAt > 30 * 864e5) ? `<a class="bknudge" href="#reglages">${IC.down} Pensez à sauvegarder vos données</a>` : ''}
     <div class="tiny muted" style="padding:10px 8px 0;display:flex;gap:6px">${IC.lock} Données sur ce poste</div>
     <div class="tiny muted auteur" style="padding:4px 8px 0">Créé par ${auteurLien()}, ${AUTEUR.titre}</div>`;
-  const last = A.data.runs[0], mine = scopeSirens();
-  $('#topbar').innerHTML = `<label class="search">${IC.search}<input id="q" type="search" placeholder="Rechercher un client, un SIREN, une commune" value="${esc(A.qRaw || '')}"></label>
+  const last = A.data.runs.find((r) => !r.unique), mine = scopeSirens();
+  $('#topbar').innerHTML = `<label class="search">${IC.search}<input id="q" type="search" placeholder="Rechercher un client, un SIREN, une commune" value="${esc(A.qRaw || '')}"><kbd title="Touche / : aller à la recherche">/</kbd></label>
     <div class="seg" id="scope"><button data-s="moi" class="${scopeMoi() ? 'on' : ''}">Mon portefeuille${mine.length ? ` (${mine.length})` : ''}</button><button data-s="tous" class="${scopeMoi() ? '' : 'on'}">Tout le cabinet</button></div>
-    <span class="fresh" id="fresh">${A.run && A.run.running ? `${IC.refresh} Mise à jour en cours · ${A.run.done}/${A.run.total || '…'} dossiers` : last ? `${IC.refresh} À jour · ${ago(last.at)}` : 'Aucune mise à jour'}</span>`;
+    ${comptesConnus().length > 1 ? `<label class="compte" title="Compte impots.gouv (espace professionnel) dont proviennent les données"><span class="tiny muted">Compte</span><select id="compteSel"><option value="">Tous les comptes</option>${comptesConnus().map(([ab, c]) => `<option value="${esc(ab)}"${A.S.compte === ab ? ' selected' : ''}>${esc(c.nom || 'Compte ' + ab)}</option>`).join('')}</select></label>` : ''}
+    <span class="fresh" id="fresh">${A.run && A.run.running ? `${IC.refresh} Mise à jour en cours · ${Math.min(A.run.total || 0, (A.run.dejaLus || 0) + (A.run.faits || 0))}/${A.run.total || '…'} dossiers` : last ? `${IC.refresh} À jour · ${ago(last.at)}` : 'Aucune mise à jour'}</span>`;
   const q = $('#q');
   q.oninput = () => { A.qRaw = q.value; A.q = q.value.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); page(); };
   $$('#scope button').forEach((b) => b.onclick = async () => {
     if (b.dataset.s === 'moi' && !mine.length) { location.hash = 'reglages'; toast('Indiquez d’abord votre portefeuille (« Je suis » ou liste de SIREN)'); return; }
     A.S = await ACDB.saveSettings({ scope: b.dataset.s }); A.data.settings = A.S; compute(); render();
   });
+  const cs = $('#compteSel'); if (cs) cs.onchange = async () => { A.S = await ACDB.saveSettings({ compte: cs.value }); A.data.settings = A.S; compute(); render(); toast(cs.value ? `Données du compte ${compteLib(cs.value)}` : 'Tous les comptes impots.gouv'); };
 }
 function render() {
   const avant = A.cnt;
@@ -117,9 +139,11 @@ function animerBarre() {
 function page() {
   const { p, arg } = route();
   const el = $('#page');
+  // Les entrées en cascade ne jouent qu'à l'arrivée sur un écran, pas à chaque rafraîchissement (recherche, case cochée…)
+  const cle = p + '/' + (arg || ''); el.classList.toggle('anim', cle !== A.routeKey); A.routeKey = cle;
   if (!A.data.avis.length && !['reglages', 'bienvenue'].includes(p)) { el.innerHTML = pageVide(); return; }
-  const fn = { 'a-traiter': pageTraiter, clients: pageClients, client: pageClient, collectivites: pageCollectivites, calendrier: pageCalendrier, exports: pageExports, demander: pageDemander, habilitations: pageHabil, reglages: pageReglages, bienvenue: pageBienvenue, synthese: pageSynthese }[p] || pageTraiter;
-  el.innerHTML = fn(arg);
+  const fn = { 'a-traiter': pageTraiter, clients: pageClients, client: pageClient, dettes: pageDettes, collectivites: pageCollectivites, calendrier: pageCalendrier, exports: pageExports, demander: pageDemander, habilitations: pageHabil, 'valeur-locative': pageValeurLocative, reglages: pageReglages, bienvenue: pageBienvenue, synthese: pageSynthese }[p] || pageTraiter;
+  el.innerHTML = runBlock() + fn(arg);
   bindPage(p, arg);
 }
 function pageVide() {
@@ -134,17 +158,17 @@ function pageVide() {
 // ======================================================================
 // À traiter
 // ======================================================================
-const ACTION = { 'mail-verif': 'Demander confirmation', 'mail-rappel': 'Prévenir le client', 'mail-explication': 'Expliquer la hausse', 'mail-dette': 'Relancer le client', 'mail-amr': 'Prévenir le client', 'mail-prelevement': 'Proposer le prélèvement', reclamation: 'Préparer la réclamation', fiche: 'Voir l’analyse', pdf: 'Ouvrir l’avis' };
+const ACTION = { 'mail-verif': 'Demander confirmation', 'mail-rappel': 'Prévenir le client', 'mail-explication': 'Expliquer la hausse', 'mail-dette': 'Relancer le client', 'mail-amr': 'Prévenir le client', 'mail-prelevement': 'Proposer le prélèvement', reclamation: 'Préparer la réclamation', 'vl-reclam': 'Préparer la réclamation', 'vl-releve': 'Demander le relevé', fiche: 'Voir l’analyse', pdf: 'Ouvrir l’avis' };
 function itemHtml(t) {
   const late = /Échue/.test(t.echeance || '');
   const a = t.avis;
   return `<div class="item${t.done ? ' done' : ''}${A.sel.has(t.id) ? ' selected' : ''}" data-id="${esc(t.id)}">
     <input type="checkbox" class="selbox" data-act="sel" ${A.sel.has(t.id) ? 'checked' : ''} title="Sélectionner" aria-label="Sélectionner">
     <button class="tick" data-act="tick" title="${t.done ? 'Remettre à faire' : 'Marquer comme fait'}">${IC.check}</button>
-    <div class="who"><b data-act="fiche" title="${esc(t.nom)}">${esc(t.nom)}</b><span>${esc(t.lieu)}${t.collab ? ' · ' + esc(t.collab) : ''}</span><span class="mini-acts">${a && a.hasPdf ? `<a href="#" data-act="pdf" title="Ouvrir l’avis PDF">${IC.doc}</a>` : ''}<a href="#" data-act="note" title="Ajouter une note">${IC.edit}</a><a href="#" data-act="snooze" title="Reporter de 7 jours">${IC.snooze}</a><a href="#" data-act="site" title="Ouvrir ce dossier sur impots.gouv">${IC.ext}</a></span></div>
+    <div class="who"><b data-act="fiche" title="${esc(t.nom)}">${esc(t.nom)}</b><span>${esc(t.lieu)}${t.collab ? ' · ' + esc(t.collab) : ''}${t.action.startsWith('mail') && !((A.S.correspondance || {})[t.siren] || {}).email ? ' <span class="tiny muted" title="Aucune adresse e-mail connue pour ce client : à saisir dans la fiche ou dans le fichier des dossiers (colonne E-mail)">· sans e-mail</span>' : ''}</span><span class="mini-acts">${a && a.hasPdf ? `<a href="#" data-act="pdf" title="Ouvrir l’avis PDF">${IC.doc}</a>` : ''}<a href="#" data-act="note" title="Ajouter une note">${IC.edit}</a><a href="#" data-act="snooze" title="Reporter de 7 jours">${IC.snooze}</a><a href="#" data-act="site" title="Ouvrir ce dossier sur impots.gouv">${IC.ext}</a></span></div>
     <div class="what"><div class="q" title="${esc(t.quoi)}">${esc(t.quoi)}</div>${t.note ? `<div class="tnote">${IC.edit} ${esc(t.note)}</div>` : ''}</div>
-    <div class="amt num">${eur(t.montant)}<span class="due${late ? ' late' : ''}">${esc(t.echeance || '')}</span></div>
-    <div class="acts"><button class="btn sm${t.done ? '' : ' primary'}" data-act="main">${t.action.startsWith('mail') ? IC.mail : ''}${ACTION[t.action] || 'Ouvrir'}</button></div>
+    <div class="amt num">${t.montantLib ? esc(t.montantLib) : eur(t.montant)}<span class="due${late ? ' late' : ''}">${esc(t.echeance || '')}</span></div>
+    <div class="acts"><button class="btn sm${t.done ? '' : ' primary'}" data-act="main">${t.action.startsWith('mail') ? IC.mail : t.action.startsWith('vl') ? IC.ruler : ''}${ACTION[t.action] || 'Ouvrir'}</button></div>
   </div>`;
 }
 function pageTraiter(arg) {
@@ -270,6 +294,7 @@ function clientMailItems(siren, first) {
 }
 function runAction(t) {
   if (t.action === 'fiche') location.hash = 'client/' + t.siren;
+  else if (t.action.startsWith('vl')) location.hash = 'client/' + t.siren + '/vl';
   else if (t.action === 'pdf') openPdf(t.avis.id);
   else if (t.action === 'reclamation') openReclamation(t);
   else if (t.action.startsWith('mail')) { const items = t.done ? [mailItem(t)].filter(Boolean) : clientMailItems(t.siren, t); openComposer(items, t); }
@@ -298,21 +323,95 @@ const MODE_PILL = { NON: '<span class="pill acc">À payer par le client</span>',
 function pageClients() {
   const s = A.sort;
   const rows = clientsAgg().filter((o) => match(o.nom, o.siren, o.code, o.collab, [...o.communes].join(' ')));
-  const key = { nom: (o) => o.nom, code: (o) => o.code, collab: (o) => o.collab, tf: (o) => o.tf, cfe: (o) => o.cfe, evo: (o) => o.evo ?? -1e9, mode: (o) => o.mode, open: (o) => o.open * 1e6 + o.dette, dette: (o) => o.dette }[s.k] || ((o) => o.nom);
+  const vlk = (o) => { const r = vlParClient(o.siren); return r ? (r.k === 'TROP' ? 2e6 + r.enjeu : r.k === 'PISTE' ? 1e6 + r.enjeuP : r.k === 'QUESTION' ? 5e5 : 1) : 0; };
+  const key = { nom: (o) => o.nom, code: (o) => o.code, collab: (o) => o.collab, tf: (o) => o.tf, cfe: (o) => o.cfe, evo: (o) => o.evo ?? -1e9, mode: (o) => o.mode, open: (o) => o.open * 1e6 + o.dette, dette: (o) => o.dette, vl: vlk }[s.k] || ((o) => o.nom);
   rows.sort((a, b) => { const x = key(a), y = key(b); return (typeof x === 'string' ? x.localeCompare(y, 'fr') : x - y) * s.dir; });
   const th = (k, t, r) => `<th class="s${r ? ' r' : ''}" data-sort="${k}">${t}${s.k === k ? (s.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
   const nbDoss = A.data.dossiers.length;
   return `<div class="ph"><div><h1>Clients</h1><div class="sub">${plural(rows.length, 'client')} avec des avis ${A.c.annee} ou ${A.c.anneeN1}${nbDoss ? ` · ${plural(nbDoss, 'dossier contrôlé', 'dossiers contrôlés')}` : ''}</div></div></div>
-  <div class="card"><table class="t"><thead><tr>${th('nom', 'Client')}${th('code', 'Code')}${th('collab', 'Collaborateur')}${th('tf', `Taxe foncière ${A.c.annee}`, 1)}${th('cfe', `CFE ${A.c.annee}`, 1)}${th('evo', 'Évolution', 1)}${th('mode', 'Paiement')}${th('open', 'À traiter', 1)}</tr></thead>
+  <div class="card"><table class="t"><thead><tr>${th('nom', 'Client')}${th('code', 'Code')}${th('collab', 'Collaborateur')}${th('tf', `Taxe foncière ${A.c.annee}`, 1)}${th('cfe', `CFE ${A.c.annee}`, 1)}${th('evo', 'Évolution', 1)}${th('mode', 'Paiement')}${th('vl', 'Valeur locative')}${th('open', 'À traiter', 1)}</tr></thead>
   <tbody>${rows.slice(0, 600).map((o) => `<tr class="click" data-siren="${o.siren}"><td><b>${esc(o.nom)}</b><div class="tiny muted">${fmtSiren(o.siren)}${o.communes.size ? ' · ' + esc([...o.communes].slice(0, 3).join(', ')) + (o.communes.size > 3 ? '…' : '') : ''}</div></td>
     <td>${esc(o.code)}</td><td>${esc(o.collab)}</td><td class="r num">${o.tf ? eur(o.tf) : '<span class="muted">—</span>'}</td><td class="r num">${o.cfe ? eur(o.cfe) : '<span class="muted">—</span>'}</td>
-    <td class="r num ${o.evo > 0.5 ? 'up' : o.evo < -0.5 ? 'dn' : ''}">${o.evo === null ? '<span class="muted">—</span>' : pcv(o.evo)}</td><td>${MODE_PILL[o.mode]}</td>
+    <td class="r num ${o.evo > 0.5 ? 'up' : o.evo < -0.5 ? 'dn' : ''}">${o.evo === null ? '<span class="muted">—</span>' : pcv(o.evo)}</td><td>${MODE_PILL[o.mode]}</td><td>${vlPillClient(o.siren)}</td>
     <td class="r">${o.open ? `<span class="pill acc">${o.open}</span>` : ''}${o.dette ? ` <span class="pill bad" title="Créances non soldées">${eur(o.dette)}</span>` : ''}</td></tr>`).join('')}</tbody></table>
   ${rows.length > 600 ? `<div class="more">600 premiers clients affichés : affinez avec la recherche.</div>` : ''}${!rows.length ? '<div class="empty">Aucun client pour cette recherche.</div>' : ''}</div>`;
 }
 function bindClients() {
   $$('th[data-sort]').forEach((th) => th.onclick = () => { const k = th.dataset.sort; A.sort = { k, dir: A.sort.k === k ? -A.sort.dir : (['nom', 'code', 'collab', 'mode'].includes(k) ? 1 : -1) }; page(); });
   $$('tr[data-siren]').forEach((tr) => tr.onclick = () => { location.hash = 'client/' + tr.dataset.siren; });
+}
+
+// ======================================================================
+// Dettes fiscales (tout le portefeuille)
+// ======================================================================
+// Une ligne de dette en retard : impôt, référence (et avis de mise en recouvrement rapproché), échéance, montant d'origine, majoration, exigible
+function detteLigneHtml(l) {
+  return `<tr><td>${l.seul ? '<b>Avis de mise en recouvrement</b><div class="tiny muted">à voir dans Payer › Dette fiscale (absent de la synthèse des dettes)</div>' : `<b>${esc(l.impot)}</b> ${esc(l.annee)}${l.commune ? `<div class="tiny muted">${esc(l.commune)}</div>` : ''}`}</td><td class="small">${esc(l.reference || '')}${l.amr && !l.seul ? `<div class="tiny up">Avis de mise en recouvrement n° ${esc(l.amr)}</div>` : ''}</td><td>${l.dateLimite ? `${esc(l.dateLimite)}<div class="tiny muted">${l.jours ? `il y a ${l.jours} j` : ''}</div>` : l.emis ? `<span class="small">émis en ${esc(l.emis)}</span>` : '<span class="tiny muted">exigible</span>'}</td><td class="r num">${eur2(l.montant)}</td><td class="r num">${l.majoration > 0 ? '<span class="up">+ ' + eur2(l.majoration) + '</span>' : l.seul ? '<span class="tiny muted">comprise</span>' : l.amr ? '—' : '<span class="tiny muted">pas encore connue</span>'}</td><td class="r num"><b class="up">${eur2(l.exigible)}</b></td></tr>`;
+}
+A.df = { vue: 'retard', collab: '', impot: '' }; A.dOpen = new Set();
+const impotDe = (l) => (l.seul ? 'AMR' : String(l.impot || '').toUpperCase());
+function dettesVue() {
+  const corr = A.S.correspondance || {}, f = A.df;
+  const collabDe = (sc) => (corr[sc.siren] || {}).collaborateur || sc.collab || '';
+  const toutes = Object.values(A.c.situation || {}).filter((sc) => sc.retard.length || sc.aVenir.length || sc.payees.length)
+    .map((sc) => ({ ...sc, collab: collabDe(sc), code: (corr[sc.siren] || {}).code || '', maj: sc.retard.reduce((t, l) => t + (l.majoration || 0), 0), ancienne: sc.retard.reduce((m, l) => Math.max(m, l.jours || 0), 0), prochaine: sc.aVenir.map((l) => l.dateLimite).sort((x, y) => ACA.dkey(x).localeCompare(ACA.dkey(y)))[0] || '' }));
+  const base = toutes.filter((sc) => match(sc.nom, sc.siren, sc.collab, sc.code) && (!f.collab || sc.collab === f.collab) && (!f.impot || [...sc.retard, ...sc.aVenir].some((l) => impotDe(l) === f.impot)));
+  const rows = base.filter((sc) => (f.vue === 'retard' ? sc.retard.length : f.vue === 'avenir' ? sc.aVenir.length : true))
+    .sort((x, y) => (f.vue === 'avenir' ? ACA.dkey(x.prochaine).localeCompare(ACA.dkey(y.prochaine)) || y.totalAVenir - x.totalAVenir : y.totalRetard - x.totalRetard || y.totalAVenir - x.totalAVenir));
+  return { toutes, base, rows };
+}
+function pageDettes() {
+  const { toutes, base, rows } = dettesVue(), f = A.df;
+  const lus = A.data.dettes.length, derniere = A.data.dettes.reduce((m, d) => Math.max(m, d.at || 0), 0);
+  if (!lus) return `<div class="ph"><div><h1>Dettes fiscales</h1><div class="sub">Rien n’a encore été lu</div></div></div><div class="card empty">La situation de la dette fiscale de chaque dossier est lue à chaque mise à jour des clients (Compte fiscal › Synthèses › Dettes fiscales, et Payer › Dette fiscale pour les avis de mise en recouvrement). Lancez une mise à jour depuis le volet Relève.</div>`;
+  const retard = base.filter((x) => x.retard.length), totR = retard.reduce((t, x) => t + x.totalRetard, 0), totMaj = retard.reduce((t, x) => t + x.maj, 0);
+  const nAmr = retard.reduce((t, x) => t + x.retard.filter((l) => l.amr).length, 0), avenir = base.filter((x) => x.aVenir.length), totV = avenir.reduce((t, x) => t + x.totalAVenir, 0);
+  const prochaine = avenir.map((x) => x.prochaine).filter(Boolean).sort((a, b) => ACA.dkey(a).localeCompare(ACA.dkey(b)))[0];
+  const collabs = [...new Set(toutes.map((x) => x.collab).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const impots = [...new Set(toutes.flatMap((x) => [...x.retard, ...x.aVenir].map(impotDe)))].sort();
+  const tuile = (k, ton, lib, val, sous) => `<button class="kpi card vlt ${ton}${f.vue === k ? ' on' : ''}" data-dvue="${k}"><span class="tiny muted">${lib}</span><b class="num">${val}</b><span class="tiny muted">${sous}</span></button>`;
+  const pills = (sc) => { const c = {}; for (const l of sc.retard) c[impotDe(l)] = (c[impotDe(l)] || 0) + 1; return Object.entries(c).map(([k, n]) => `<span class="pill bad">${k === 'AMR' ? 'Mise en recouvrement' : esc(k)}${n > 1 ? ' ×' + n : ''}</span>`).join(' '); };
+  const tache = (sc) => A.c.taches.find((t) => t.id === 'det:' + sc.siren && !t.done);
+  return `<div class="ph"><div><h1>Dettes fiscales</h1><div class="sub">Sommes non réglées et avis de mise en recouvrement de vos clients · lu ${ago(derniere)}${lus ? ` sur ${plural(lus, 'dossier')}` : ''}</div></div>
+    <div class="r"><button class="btn" id="dXlsx">${IC.down} Exporter (Excel)</button></div></div>
+  <div class="kpis vlkpis" style="margin-bottom:14px">
+    ${tuile('retard', 'bad', 'En retard', eur(totR), `${plural(retard.length, 'client')}${totMaj ? ` · dont ${eur(totMaj)} de majorations constatées` : ''}`)}
+    ${tuile('avenir', 'acc', 'À venir', eur(totV), `${plural(avenir.length, 'client')}${prochaine ? ` · prochaine échéance le ${prochaine}` : ''}`)}
+    ${tuile('tous', '', 'Tous les dossiers suivis', plural(base.length, 'client'), `${nAmr ? plural(nAmr, 'avis de mise en recouvrement', 'avis de mise en recouvrement') + ' rapprochés · ' : ''}${plural(lus, 'situation lue', 'situations lues')}`)}
+  </div>
+  <p class="small muted" style="margin:-4px 0 12px">Une dette échue reprise par un avis de mise en recouvrement n’est comptée qu’une fois, majoration comprise. Le rapprochement se fait sur le montant et la date : il est indicatif, à confirmer sur impots.gouv.</p>
+  <div class="card filtres">
+    <label class="flt"><span>Collaborateur</span><select id="dCollab"><option value="">Tous</option>${collabs.map((c) => `<option${f.collab === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+    <label class="flt"><span>Impôt</span><select id="dImpot"><option value="">Tous</option>${impots.map((c) => `<option value="${esc(c)}"${f.impot === c ? ' selected' : ''}>${c === 'AMR' ? 'Avis de mise en recouvrement' : esc(c)}</option>`).join('')}</select></label>
+    <span class="small muted" style="margin-left:auto">${plural(rows.length, 'client')} · recherche en haut de page</span></div>
+  <div class="card drows">${rows.length ? `<div class="drow dhead"><span>Client</span><span class="r">En retard</span><span>Depuis</span><span>Impôts en retard</span><span class="r">À venir</span><span></span></div>` + rows.map((sc) => { const t = tache(sc), open = A.dOpen.has(sc.siren); return `<div class="drow${open ? ' open' : ''}" data-dsiren="${sc.siren}">
+      <span><b>${esc(sc.nom)}</b><span class="tiny muted">${fmtSiren(sc.siren)}${sc.code ? ' · ' + esc(sc.code) : ''}${sc.collab ? ' · ' + esc(sc.collab) : ''}</span></span>
+      <span class="r num">${sc.totalRetard ? `<b class="up">${eur(sc.totalRetard)}</b>${sc.maj ? `<span class="tiny muted">dont ${eur(sc.maj)} de majorations</span>` : ''}` : '<span class="muted">—</span>'}</span>
+      <span class="small">${sc.ancienne ? `${sc.ancienne} jours` : sc.retard.length ? 'exigible' : ''}</span>
+      <span>${pills(sc) || '<span class="small ok">rien en retard</span>'}</span>
+      <span class="r num small">${sc.totalAVenir ? `${eur(sc.totalAVenir)}<span class="tiny muted">${esc(sc.prochaine)}</span>` : '<span class="muted">—</span>'}</span>
+      <span class="dacts">${t ? `<button class="btn sm primary" data-drelance="${sc.siren}">${IC.mail} Relancer</button>` : ''}<a class="btn sm" href="#client/${sc.siren}/dettes">Fiche</a><button class="btn sm ghost dtog" data-dtog="${sc.siren}" title="Détail" aria-expanded="${open}">${IC.chevron}</button></span>
+      ${open ? `<div class="ddet">${sc.retard.length ? `<table class="t"><thead><tr><th>Impôt</th><th>Référence</th><th>Échéance</th><th class="r">Dû à l’origine</th><th class="r">Majoration</th><th class="r">Exigible</th></tr></thead><tbody>${sc.retard.map(detteLigneHtml).join('')}</tbody></table>` : ''}${sc.aVenir.length ? `<div class="small" style="margin-top:8px"><b>À venir :</b> ${sc.aVenir.map((l) => `${esc(l.impot)} ${esc(l.annee)} ${eur2(l.montant)} le ${esc(l.dateLimite)}`).join(' · ')}</div>` : ''}${sc.payees.length ? `<div class="small ok" style="margin-top:6px"><b>Payé :</b> ${sc.payees.map((l) => `${esc(l.impot)} ${esc(l.annee)} ${eur2(l.montant)}${l.date ? ' le ' + esc(l.date) : ''}`).join(' · ')}</div>` : ''}</div>` : ''}
+    </div>`; }).join('') : `<div class="empty">${f.vue === 'retard' ? 'Aucune somme en retard avec ces filtres. 🎉' : 'Aucun client avec ces filtres.'}</div>`}</div>`;
+}
+function bindDettes() {
+  $$('[data-dvue]').forEach((b) => b.onclick = () => { A.df.vue = b.dataset.dvue; page(); });
+  const c = $('#dCollab'); if (c) c.onchange = () => { A.df.collab = c.value; page(); };
+  const i = $('#dImpot'); if (i) i.onchange = () => { A.df.impot = i.value; page(); };
+  $$('[data-dtog]').forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); const s = b.dataset.dtog; A.dOpen.has(s) ? A.dOpen.delete(s) : A.dOpen.add(s); page(); });
+  $$('.drow[data-dsiren]').forEach((r) => r.onclick = (ev) => { if (ev.target.closest('a, button, .ddet')) return; const s = r.dataset.dsiren; A.dOpen.has(s) ? A.dOpen.delete(s) : A.dOpen.add(s); page(); });
+  $$('[data-drelance]').forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); const t = A.c.taches.find((x) => x.id === 'det:' + b.dataset.drelance); if (t) runAction(t); });
+  const x = $('#dXlsx'); if (x) x.onclick = () => {
+    const { rows } = dettesVue();
+    const cols = [{ h: 'Client', w: 34, style: () => 6 }, { h: 'SIREN', w: 12 }, { h: 'Code', w: 10 }, { h: 'Collaborateur', w: 16 }, { h: 'Impôt', w: 14 }, { h: 'Année', w: 8 }, { h: 'Référence', w: 22 }, { h: 'Échéance', w: 12 }, { h: 'Dû à l’origine', w: 14, t: 'eur' }, { h: 'Majoration constatée', w: 14, t: 'eur' }, { h: 'Exigible', w: 14, t: 'eur' }, { h: 'Avis de mise en recouvrement', w: 18 }];
+    const wb = buildWorkbook([
+      { name: 'En retard', title: 'Dettes fiscales en retard', subtitle: `${scopeMoi() ? 'Mon portefeuille' : 'Tout le cabinet'} · extrait le ${new Date().toLocaleDateString('fr-FR')} · Relève (rapprochement des avis de mise en recouvrement indicatif)`, tab: true, cols,
+        rows: rows.flatMap((sc) => sc.retard.map((l) => [sc.nom, sc.siren, sc.code, sc.collab, l.seul ? 'Mise en recouvrement' : l.impot, l.annee, l.reference, l.dateLimite || 'exigible', l.montant, l.majoration || '', l.exigible, l.amr || ''])) },
+      { name: 'À venir', title: 'Échéances à venir', cols: [{ h: 'Client', w: 34, style: () => 6 }, { h: 'SIREN', w: 12 }, { h: 'Collaborateur', w: 16 }, { h: 'Impôt', w: 12 }, { h: 'Année', w: 8 }, { h: 'Référence', w: 26 }, { h: 'Échéance', w: 12 }, { h: 'Montant', w: 14, t: 'eur' }],
+        rows: rows.flatMap((sc) => sc.aVenir.map((l) => [sc.nom, sc.siren, sc.collab, l.impot, l.annee, l.reference, l.dateLimite, l.montant])) },
+    ]);
+    download(wb, `Releve_dettes_fiscales_${jourISO()}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('Classeur téléchargé');
+  };
 }
 
 // ======================================================================
@@ -336,48 +435,93 @@ function lignesTable(a) {
 function pageClient(arg) {
   const siren = String(arg).split('/')[0];
   const all = A.data.avis.filter((a) => a.siren === siren);
-  if (!all.length) return `<a class="back" href="#clients">${IC.arrowL} Clients</a><div class="card empty">Client introuvable sur ce poste.</div>`;
   const info = (A.S.correspondance || {})[siren] || {};
+  if (!all.length) {
+    // Dossier sans avis sur le poste mais dont les biens immobiliers ont été lus : on affiche au moins le contrôle de la valeur locative
+    const d = (A.data.dossiers || []).find((x) => x.siren === siren), b = (A.data.biens || []).find((x) => x.siren === siren);
+    if (!d && !b) return `<a class="back" href="#clients">${IC.arrowL} Clients</a><div class="card empty">Client introuvable sur ce poste.</div>`;
+    return `<a class="back" href="#valeur-locative">${IC.arrowL} Valeur locative</a>
+    <div class="ph"><div><h1>${esc((b && b.nom) || (d && d.nom) || siren)}</h1><div class="sub">SIREN ${fmtSiren(siren)}${info.code ? ` · Dossier ${esc(info.code)}` : ''}${info.collaborateur ? ` · Suivi par ${esc(info.collaborateur)}` : ''}${d && d.checkedAt ? ` · lu sur impots.gouv ${ago(d.checkedAt)}` : ''}</div></div>
+    <div class="r"><button class="btn" id="majClient" title="Relit maintenant, pour ce seul client : avis, dettes fiscales, documents à payer, paiements et biens immobiliers (quelques secondes, onglet impots.gouv connecté)">${IC.refresh} Actualiser</button><button class="btn" id="onSite">${IC.ext} impots.gouv</button></div></div>
+    ${dettesBlock(siren, (A.c.situation || {})[siren] || { retard: [], aVenir: [], payees: [], totalRetard: 0, totalAVenir: 0 })}
+    <div class="card empty" style="margin-bottom:14px">Aucun avis de ce dossier sur ce poste (pas encore d’avis de taxe foncière, ou dossier hors périmètre de la dernière mise à jour).</div>
+    ${vlClientBlock(siren)}`;
+  }
   const nom = all[0].nom;
   const N = A.c.N.filter((a) => a.siren === siren).sort((a, b) => (a.taxe > b.taxe ? -1 : 1) || b.m - a.m);
   const tasks = A.c.taches.filter((t) => t.siren === siren);
   const dettes = A.c.dettes.filter((r) => r.siren === siren);
   const today = ACA.dkey(new Date().toLocaleDateString('fr-FR'));
   const amrs = A.c.amr.filter((r) => r.siren === siren);
-  const detteDue = dettes.filter((r) => r.solde >= A.c.seuilDette && ACA.dkey(r.dateLimite) < today).reduce((s, r) => s + r.solde, 0) + amrs.reduce((s, r) => s + r.montant, 0);
+  const situ = (A.c.situation || {})[siren] || { retard: [], aVenir: [], payees: [], totalRetard: 0, totalAVenir: 0 };
+  const detteDue = situ.totalRetard;
   const main = N.find((a) => a.hausse) || N.find((a) => !a.acompte) || N[0];
   const hist = {};
   for (const a of all.filter((x) => !x.acompte)) { const k = a.taxe; hist[k] = hist[k] || {}; hist[k][a.annee] = (hist[k][a.annee] || 0) + (num(a.infos && a.infos.montantImpot) || num(a.montant)); }
   const histHtml = Object.entries(hist).filter(([, y]) => Object.keys(y).length >= 2).map(([k, y]) => { const ys = Object.keys(y).sort().slice(-6), max = Math.max(...ys.map((x) => y[x])); return `<div class="card av"><h3>${TAXE_LABEL[k]} sur ${ys.length} ans</h3><div class="hist">${ys.map((x) => `<div class="b${x === A.c.annee ? ' cur' : ''}"><span class="num">${eur(y[x])}</span><i style="height:${Math.max(4, y[x] / max * 70)}px"></i>${x}</div>`).join('')}</div></div>`; }).join('');
   return `<a class="back" href="#a-traiter">${IC.arrowL} Retour à la liste de travail</a>
   <div class="ph"><div><h1>${esc(nom)}</h1><div class="meta"><span>SIREN ${fmtSiren(siren)}</span>${info.code ? `<span>Dossier ${esc(info.code)}</span>` : ''}${info.collaborateur ? `<span>Suivi par ${esc(info.collaborateur)}</span>` : ''}<span>${info.email ? esc(info.email) : '<a href="#" id="addMail">Ajouter l’e-mail du client</a>'}</span></div></div>
-  <div class="r">${main ? `<button class="btn primary" id="mailMain">${IC.mail} Préparer le message${clientMailItems(siren).length > 1 ? ` (${clientMailItems(siren).length} points)` : ''}</button>` : ''}${main && main.hasPdf ? `<button class="btn" data-pdf="${esc(main.id)}">${IC.doc} Ouvrir l’avis ${A.c.annee}</button>` : ''}<button class="btn" id="onSite" title="Sélectionne ce dossier dans votre espace professionnel">${IC.ext} impots.gouv</button></div></div>
+  <div class="r">${main ? `<button class="btn primary" id="mailMain">${IC.mail} Préparer le message${clientMailItems(siren).length > 1 ? ` (${clientMailItems(siren).length} points)` : ''}</button>` : ''}${main && main.hasPdf ? `<button class="btn" data-pdf="${esc(main.id)}">${IC.doc} Ouvrir l’avis ${A.c.annee}</button>` : ''}<button class="btn" id="majClient" title="Relit maintenant, pour ce seul client : avis, dettes fiscales, documents à payer, paiements et biens immobiliers (quelques secondes, onglet impots.gouv connecté)">${IC.refresh} Actualiser</button><button class="btn" id="onSite" title="Sélectionne ce dossier dans votre espace professionnel">${IC.ext} impots.gouv</button></div></div>
+  ${(() => { const d = A.data.dossiers.find((x) => x.siren === siren); return d && d.checkedAt ? `<div class="tiny muted" style="margin:-6px 0 10px">Données lues sur impots.gouv ${ago(d.checkedAt)}${d.comptes && d.comptes.length && comptesConnus().length > 1 ? ' · ' + d.comptes.map(compteLib).map(esc).join(', ') : ''}</div>` : ''; })()}
   <div class="badges">${N.filter((a) => a.n1 && !a.acompte).map((a) => `<span class="pill ${a.d.pct > 0.5 ? (a.hausse ? 'bad' : 'warn') : 'ok'}">${TAXE_LABEL[a.taxe]} ${esc(a.commune || '')} : ${pcv(a.d.pct)}</span>`).join('')}
-    ${[...new Set(N.map((a) => a.prel).filter(Boolean))].map((p) => p === 'NON' ? '<span class="pill acc">À payer par le client</span>' : p === 'MENSUEL' ? '<span class="pill">Mensualisé : rien à payer en plus</span>' : '<span class="pill ok">Prélevé à l’échéance</span>').join('')}
-    ${detteDue ? `<span class="pill bad">${eur(detteDue)} de créances échues</span>` : dettes.length || A.data.dettes.some((x) => x.siren === siren) ? '<span class="pill ok">Aucune créance en retard</span>' : ''}</div>
-  ${tasks.length ? `<div class="card items" style="margin-bottom:16px">${tasks.map(itemHtml).join('')}</div>` : ''}
-  ${N.map((a) => `<div class="card av"><div class="hd"><div><h2 style="margin:0">${TAXE_LABEL[a.taxe]} ${a.annee}${a.acompte ? ' · acompte' : ''} · ${esc(a.commune || '')}</h2><div class="small muted">${esc(a.role || '')}${a.reference ? ' · réf. ' + esc(a.reference) : ''} · ${esc(a.paiement)}${a.dateLimite ? ' · date limite ' + esc(a.dateLimite) : ''}</div></div>
-    <div class="m"><b class="num">${eur(a.m)}</b>${a.n1 ? `<span class="small muted num">${eur(a.n1.m)} en ${A.c.anneeN1} · <span class="${a.d.delta > 0.5 ? 'up' : 'dn'}">${sgn(a.d.delta)} (${pcv(a.d.pct)})</span></span>` : ''}</div></div>
+    ${N.some((a) => a.etatPaiement === 'paye') ? `<span class="pill ok" title="Paiement constaté sur impots.gouv (synthèse des paiements ou absence de créance)">${N.filter((a) => a.etatPaiement === 'paye').length > 1 ? 'Avis échus payés' : 'Avis échu payé'}</span>` : ''}
+    ${[...new Set(N.filter((a) => a.etatPaiement !== 'paye').map((a) => a.prel).filter(Boolean))].map((p) => p === 'NON' ? '<span class="pill acc">À payer par le client</span>' : p === 'MENSUEL' ? '<span class="pill">Mensualisé : rien à payer en plus</span>' : '<span class="pill ok">Prélevé à l’échéance</span>').join('')}
+    ${detteDue ? `<span class="pill bad">${eur(detteDue)} en retard</span>` : dettes.length || A.data.dettes.some((x) => x.siren === siren) ? '<span class="pill ok">Aucune créance en retard</span>' : ''}${vlPillClient(siren)}</div>
+  ${(() => { const sec = [tasks.length ? ['#actions', 'Actions'] : null, N.length ? ['#avis', 'Avis ' + A.c.annee] : null, amrs.length || dettes.length || A.data.dettes.some((x) => x.siren === siren) ? ['#dettes', 'Dettes fiscales'] : null, (A.data.biens || []).some((r) => r.siren === siren) ? ['#vl', 'Valeur locative'] : null, N.some((a) => a.cfe) ? ['#cfe', 'Contrôle CFE'] : null, ['#notes', 'Notes'], ['#historique', 'Tous les avis']].filter(Boolean); return sec.length > 3 ? `<nav class="subnav" aria-label="Sections de la fiche">${sec.map(([h, t]) => `<a href="${h}" data-ancre="${h}">${t}</a>`).join('')}</nav>` : ''; })()}
+  ${tasks.length ? `<div class="card items" id="actions" style="margin-bottom:16px">${tasks.map(itemHtml).join('')}</div>` : ''}
+  ${N.map((a, i) => `<div class="card av"${i === 0 ? ' id="avis"' : ''}><div class="hd"><div><h2 style="margin:0">${TAXE_LABEL[a.taxe]} ${a.annee}${a.acompte ? ' · acompte' : ''} · ${esc(a.commune || '')}</h2><div class="small muted">${esc(a.role || '')}${a.reference ? ' · réf. ' + esc(a.reference) : ''} · ${esc(a.paiement)}${a.dateLimite ? ' · date limite ' + esc(a.dateLimite) : ''}</div></div>
+    <div class="m"><b class="num">${eur(a.m)}</b>${a.n1 ? `<span class="small muted num">${eur(a.n1.m)} en ${A.c.anneeN1} · <span class="${a.d.delta > 0.5 ? 'up' : 'dn'}">${sgn(a.d.delta)} (${pcv(a.d.pct)})</span></span>` : ''}${a.etatPaiement === 'paye' ? `<span class="pill ok" style="margin-top:4px">${esc(a.paiement)}</span>` : a.etatPaiement === 'impaye' ? '<span class="pill bad" style="margin-top:4px">Non payé : dans la dette fiscale</span>' : a.etatPaiement === 'inconnu' ? '<span class="pill warn" style="margin-top:4px">Paiement à confirmer</span>' : ''}</div></div>
     ${decompBlock(a)}${lignesTable(a)}
     <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">${a.hasPdf ? `<button class="btn sm" data-pdf="${esc(a.id)}">${IC.doc} Avis ${a.annee}</button>` : ''}${a.n1 && a.n1.hasPdf ? `<button class="btn sm" data-pdf="${esc(a.n1.id)}">${IC.doc} Avis ${a.n1.annee}</button>` : ''}<button class="btn sm" data-mail="${esc(a.id)}">${IC.mail} Message sur cet avis</button></div></div>`).join('')}
-  ${cfeBlock(N)}
+  ${dettesBlock(siren, situ)}
+  ${cfeBlock(N, siren)}
+  ${vlClientBlock(siren)}
   ${histHtml}
   ${notesBlock(siren)}
-  <div class="card av"><h3>Tous les avis sur ce poste</h3><table class="t"><thead><tr><th>Année</th><th>Impôt</th><th>Commune</th><th>Rôle / type</th><th class="r">Montant</th><th>Paiement</th><th></th></tr></thead><tbody>
+  <div class="card av" id="historique"><h3>Tous les avis sur ce poste</h3><table class="t"><thead><tr><th>Année</th><th>Impôt</th><th>Commune</th><th>Rôle / type</th><th class="r">Montant</th><th>Paiement</th><th></th></tr></thead><tbody>
   ${all.sort((a, b) => b.annee.localeCompare(a.annee) || a.taxe.localeCompare(b.taxe)).map((a) => `<tr><td>${esc(a.annee)}</td><td>${TAXE_LABEL[a.taxe]}${a.acompte ? ' (acompte)' : ''}</td><td>${esc(a.commune || '')}</td><td class="small">${esc(a.role || a.type || '')}</td><td class="r num">${eur(num(a.infos && a.infos.montantImpot) || a.montant)}</td><td class="small">${esc(PAIEMENT[a.infos && a.infos.prelevement] || '')}</td><td class="r">${a.hasPdf ? `<button class="btn ghost sm" data-pdf="${esc(a.id)}">PDF</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
-  ${amrs.length ? `<div class="card av"><h3>Documents à payer (Payer › Dette fiscale)</h3><p class="small muted" style="margin:0 0 8px">Avis de mise en recouvrement : pénalités, majorations ou rappels. Leur nature s’affiche sur le site, à l’étape suivante du paiement.</p><table class="t"><thead><tr><th>AMR n°</th><th>SIRET</th><th class="r">Montant</th></tr></thead><tbody>${amrs.map((r) => `<tr><td>${esc(r.amr)}</td><td>${esc(r.siret)}</td><td class="r num up">${eur2(r.montant)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-  ${dettes.length ? `<div class="card av"><h3>Dettes fiscales (Compte fiscal › Synthèses › Dettes fiscales)</h3><table class="t"><thead><tr><th>Année</th><th>Impôt</th><th>Commune</th><th>Référence</th><th>Date limite</th><th class="r">Montant dû</th><th class="r">Payé</th><th class="r">Solde</th></tr></thead><tbody>${dettes.map((r) => { const due = ACA.dkey(r.dateLimite) < today, small = r.solde > 0 && r.solde < A.c.seuilDette; return `<tr><td>${esc(r.annee)}</td><td>${esc(r.impot)}</td><td>${esc(r.commune)}</td><td class="small">${esc(r.reference)}</td><td>${esc(r.dateLimite)}${due ? '' : ' <span class="pill">à échoir</span>'}</td><td class="r num">${eur2(r.montantDu)}</td><td class="r num">${r.paiementMontant ? eur2(num(r.paiementMontant)) : ''}</td><td class="r num ${r.solde >= A.c.seuilDette && due ? 'up' : ''}">${eur2(r.solde)}${small ? ' <span class="pill" title="Sous le seuil des réglages : pas d’action proposée">reliquat</span>' : ''}</td></tr>`; }).join('')}</tbody></table></div>` : ''}`;
+`;
 }
-function cfeBlock(N) {
+// Dettes fiscales du client, lisibles : en retard (avec l'avis de mise en recouvrement rapproché et la majoration), à venir, payées récemment
+function dettesBlock(siren, situ) {
+  const lu = A.data.dettes.find((x) => x.siren === siren), pay = (A.c.paiements || {})[siren];
+  if (!lu && !pay) return '';
+  const { retard, aVenir, payees, totalRetard, totalAVenir } = situ;
+  const payTF = ((pay && pay.rows) || []).filter((r) => r.anneeLue === A.c.annee || r.periode === A.c.annee).sort((x, y) => ACA.dkey(y.datePaiement).localeCompare(ACA.dkey(x.datePaiement)));
+  const phrase = [retard.length ? `<b class="up">${eur(totalRetard)} en retard</b> sur ${plural(retard.length, 'dette')} (${[...new Set(retard.map((l) => l.impot))].join(', ')})` : '<b class="ok">Aucune somme en retard</b>', aVenir.length ? `${eur(totalAVenir)} à venir (${aVenir.map((l) => `${l.impot} ${l.dateLimite}`).slice(0, 3).join(', ')}${aVenir.length > 3 ? '…' : ''})` : '', payTF.length ? `${plural(payTF.length, 'paiement d’impôt local', 'paiements d’impôts locaux')} en ${A.c.annee}` : ''].filter(Boolean).join(' · ');
+  const ligne = detteLigneHtml;
+  const dos = A.data.dossiers.find((x) => x.siren === siren) || {};
+  return `<div class="card av dettes" id="dettes"><div class="hd"><div><h3 style="margin:0">Dettes fiscales</h3><div class="small muted">Synthèse des dettes lue ${dos.dettesAt ? ago(dos.dettesAt) : lu ? ago(lu.at) : ago(pay.at)} · ${A.data.settings.amr === false ? 'documents à payer non lus (réglages)' : dos.amrAt ? `documents à payer (avis de mise en recouvrement) lus ${ago(dos.amrAt)}` : 'documents à payer pas encore lus'}</div></div><button class="btn sm" id="onSiteDettes" style="margin-left:auto">${IC.ext} Voir sur impots.gouv</button></div>
+    <p class="dettes-phrase">${phrase}</p>
+    ${retard.length ? `<div class="dsec bad"><div class="dsec-h"><span class="sw" style="background:#B42318"></span><b>En retard</b><span class="muted">${plural(retard.length, 'dette')} · ${eur(totalRetard)} exigibles${retard.some((l) => l.majoration > 0) ? ', majorations comprises' : ''}</span></div>
+      <table class="t"><thead><tr><th>Impôt</th><th>Référence</th><th>Échéance</th><th class="r">Dû à l’origine</th><th class="r">Majoration</th><th class="r">Exigible</th></tr></thead><tbody>${retard.map(ligne).join('')}</tbody></table>
+      <p class="tiny muted" style="margin:8px 0 0">La majoration est l’écart entre la dette et l’avis de mise en recouvrement qui la reprend (majoration de 5 % ou 10 % selon l’impôt, intérêts de retard, frais). Tant qu’aucun avis n’est émis, elle n’est pas encore connue. Rapprochement indicatif, par montant : à confirmer sur impots.gouv.</p></div>` : ''}
+    ${aVenir.length ? `<div class="dsec"><div class="dsec-h"><span class="sw" style="background:#7A7F8C"></span><b>À venir</b><span class="muted">${plural(aVenir.length, 'échéance')} · ${eur(totalAVenir)}</span></div>
+      <table class="t"><thead><tr><th>Impôt</th><th>Référence</th><th>Échéance</th><th class="r">Montant</th><th>Paiement prévu</th></tr></thead><tbody>${aVenir.map((l) => { const av = A.c.N.find((a) => a.siren === siren && new RegExp(a.taxe === 'TF' ? 'TF|FONCI' : 'CFE', 'i').test(l.impot) && String(a.annee) === String(l.annee) && (!l.commune || !a.commune || l.commune.toUpperCase().replace(/[^A-Z]/g, '') === a.commune.toUpperCase().replace(/[^A-Z]/g, ''))); return `<tr><td><b>${esc(l.impot)}</b> ${esc(l.annee)}${l.commune ? `<div class="tiny muted">${esc(l.commune)}</div>` : ''}</td><td class="small">${esc(l.reference || '')}</td><td>${esc(l.dateLimite)}${l.jours !== null && l.jours >= 0 ? `<div class="tiny muted">dans ${plural(l.jours, 'jour')}</div>` : ''}</td><td class="r num">${eur2(l.montant)}</td><td>${av ? (av.prel === 'OUI' ? '<span class="pill ok">Prélevée à l’échéance</span>' : av.prel === 'MENSUEL' ? '<span class="pill">Mensualisé</span>' : av.prel === 'NON' ? '<span class="pill acc">À payer par le client</span>' : '') : '<span class="tiny muted">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
+    ${payTF.length || payees.length ? `<div class="dsec ok"><div class="dsec-h"><span class="sw" style="background:var(--ok)"></span><b>Payé récemment</b><span class="muted">${plural(payTF.length + payees.length, 'paiement')}</span></div>
+      <table class="t"><thead><tr><th>Impôt</th><th>Référence</th><th>Payé le</th><th class="r">Montant</th><th>Mode</th></tr></thead><tbody>${payTF.map((r) => `<tr><td><b>${esc(r.impot)}</b> ${esc(r.periode || r.anneeLue)}${r.commune ? `<div class="tiny muted">${esc(r.commune)}${r.nic ? ' · NIC ' + esc(r.nic) : ''}</div>` : ''}</td><td class="small">${esc(r.reference || '')}</td><td>${esc(r.datePaiement)}</td><td class="r num ok">${eur2(num(r.montant))}</td><td class="small">${esc(r.nature || '')}</td></tr>`).join('')}${payees.map((l) => `<tr><td><b>${esc(l.impot)}</b> ${esc(l.annee)}</td><td class="small">${esc(l.reference || '')}</td><td>${esc(l.date || '')}</td><td class="r num ok">${eur2(l.montant)}</td><td class="small">${esc(l.nature || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${!retard.length && !aVenir.length && !payTF.length && !payees.length ? '<p class="small muted" style="margin:0">Aucune dette ni paiement d’impôt local enregistré pour ce dossier.</p>' : ''}</div>`;
+}
+function cfeBlock(N, siren) {
   const l = N.filter((a) => a.cfe);
   if (!l.length) return '';
-  return `<div class="card av"><h3>Contrôle de la CFE (base minimum, création)</h3><table class="t"><thead><tr><th>Avis</th><th>Base minimum</th><th class="r">CA ${l[0].cfe.ref}</th><th>Tranche</th><th class="r">Plafond légal</th><th>Constat</th></tr></thead><tbody>
-  ${l.map((a) => { const c = a.cfe; const st = c.anomalies.length ? `<span class="cst bad">${esc(c.anomalies[0].texte)}</span>` : c.infos.length ? `<span class="small muted">${esc(c.infos.join(' '))}</span>` : c.bm && c.plafond ? '<span class="cst ok">Conforme au barème</span>' : !c.bm ? '<span class="small muted">Imposition sur la valeur locative</span>' : ''; return `<tr><td style="white-space:nowrap">CFE ${a.annee}<div class="tiny muted">${esc(a.commune || '')}</div></td><td class="num">${c.bm ? eur(c.bmM) : 'non'}</td><td class="r num">${c.caRef !== null ? eur(c.caRef) : '<span class="muted">non importé</span>'}</td><td class="small" style="white-space:nowrap">${esc((c.tranche || '').replace(/^CA de /, '').replace(/^CA /, ''))}</td><td class="r num">${c.plafond ? eur(c.plafond) : ''}</td><td style="white-space:normal">${st}</td></tr>`; }).join('')}</tbody></table>
+  const multi = l.length > 1 || l.some((a) => a.cfe.multi), parNic = ((A.data.ca || {})[siren] || {}).parNic || {};
+  const src = { saisi: 'saisi', somme: 'somme des établissements', cumul: 'cumul des dossiers', import: 'importé' };
+  return `<div class="card av" id="cfe"><h3>Contrôle de la CFE (base minimum, création)</h3><table class="t"><thead><tr><th>Avis</th><th>Base minimum</th><th class="r">CA ${l[0].cfe.ref}</th><th>Tranche</th><th class="r">Plafond légal</th><th>Constat</th></tr></thead><tbody>
+  ${l.map((a) => { const c = a.cfe; const st = c.anomalies.length ? `<span class="cst bad">${esc(c.anomalies[0].texte)}</span>` : c.infos.length ? `<span class="small muted">${esc(c.infos.join(' '))}</span>` : c.bm && c.plafond ? '<span class="cst ok">Conforme au barème</span>' : !c.bm ? '<span class="small muted">Imposition sur la valeur locative</span>' : ''; return `<tr><td style="white-space:nowrap">CFE ${a.annee}<div class="tiny muted">${esc(a.commune || '')}${a.nic ? ' · NIC ' + esc(a.nic) : ''}</div></td><td class="num">${c.bm ? eur(c.bmM) : 'non'}</td><td class="r num">${c.caRef !== null ? `${eur(c.caRef)}${c.source && c.source !== 'import' ? `<div class="tiny muted">${src[c.source]}</div>` : ''}` : '<span class="muted">non importé</span>'}</td><td class="small" style="white-space:nowrap">${esc((c.tranche || '').replace(/^CA de /, '').replace(/^CA /, ''))}</td><td class="r num">${c.plafond ? eur(c.plafond) : ''}</td><td style="white-space:normal">${st}</td></tr>`; }).join('')}</tbody></table>
+  ${multi ? `<div class="caetab"><b class="small">Chiffre d’affaires par établissement</b><p class="tiny muted" style="margin:2px 0 8px">Plusieurs établissements ou dossiers fiscaux sous ce SIREN. La base minimum se calcule sur le chiffre d’affaires total de l’entreprise (tous établissements et activités) et la cotisation minimum n’est due qu’au principal établissement. Indiquez le CA ${l[0].cfe.ref} de chacun : Relève en fait la somme et repère le principal établissement. La saisie est conservée et prime sur le fichier importé.</p>
+    <div class="caetab-rows">${l.map((a) => `<label class="inl" style="font-weight:400"><span class="small" style="min-width:220px">${esc(a.commune || 'CFE')}${a.nic ? ` <span class="muted">· NIC ${esc(a.nic)}</span>` : ''}</span><input type="number" class="caNic" data-nic="${esc(a.nic || '')}" min="0" step="100" placeholder="CA HT" value="${parNic[a.nic] !== undefined ? esc(parNic[a.nic]) : ''}" style="width:140px"><span class="small muted">€</span></label>`).join('')}<button class="btn sm" id="caNicOk">Enregistrer</button></div></div>` : ''}
   ${l.every((a) => a.cfe.caRef === null) ? '<p class="small muted" style="margin:8px 0 0">Importez les chiffres d’affaires dans <a href="#reglages">Réglages</a> pour contrôler la base minimum.</p>' : ''}</div>`;
+}
+async function saveCaNic(siren) {
+  const all = { ...(A.data.ca || {}) }, o = { exos: [], creation: '', ...(all[siren] || {}) }, parNic = { ...(o.parNic || {}) };
+  $$('.caNic').forEach((i) => { const v = i.value.trim(); if (v === '') delete parNic[i.dataset.nic]; else parNic[i.dataset.nic] = Math.max(0, Math.round(+v || 0)); });
+  all[siren] = { ...o, parNic };
+  await ACDB.put('meta', { key: 'ca', data: all }); A.data.ca = all; compute(); page(); toast('Chiffre d’affaires par établissement enregistré');
 }
 function notesBlock(siren) {
   const notes = (A.data.cnotes[siren] || []).slice().sort((a, b) => b.at - a.at);
-  return `<div class="card av"><h3>Notes</h3>${notes.map((n, i) => `<div class="cnote"><span class="tiny muted">${new Date(n.at).toLocaleDateString('fr-FR')}</span> ${esc(n.text)} <a href="#" class="tiny" data-delnote="${n.at}">supprimer</a></div>`).join('') || '<p class="small muted" style="margin:0 0 8px">Aucune note.</p>'}
+  return `<div class="card av" id="notes"><h3>Notes</h3>${notes.map((n, i) => `<div class="cnote"><span class="tiny muted">${new Date(n.at).toLocaleDateString('fr-FR')}</span> ${esc(n.text)} <a href="#" class="tiny" data-delnote="${n.at}">supprimer</a></div>`).join('') || '<p class="small muted" style="margin:0 0 8px">Aucune note.</p>'}
   <div style="display:flex;gap:8px;margin-top:8px"><input id="cnoteIn" placeholder="Ajouter une note (appel, accord du client, pièce reçue…)" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 10px"><button class="btn sm" id="cnoteOk">Ajouter</button></div></div>`;
 }
 async function saveCnotes(siren, list) {
@@ -388,7 +532,20 @@ function bindClient(arg) {
   const [siren, sub] = String(arg).split('/');
   bindTraiter();
   if (sub === 'message') setTimeout(() => { const b = $('#mailMain'); if (b) b.click(); }, 50);
+  if (sub === 'vl') setTimeout(() => { const e = $('#vl'); if (e) e.scrollIntoView({ behavior: calme() ? 'auto' : 'smooth', block: 'start' }); }, 50);
+  if (sub === 'dettes') setTimeout(() => { const e = $('#dettes'); if (e) e.scrollIntoView({ behavior: calme() ? 'auto' : 'smooth', block: 'start' }); }, 50);
+  bindAncres();
+  bindVl(siren);
   const os = $('#onSite'); if (os) os.onclick = () => openOnSite(siren, 'accueil');
+  const mc = $('#majClient'); if (mc) mc.onclick = async () => {
+    mc.disabled = true; mc.innerHTML = `${IC.refresh} Lecture…`; mc.classList.add('spin');
+    const nom = ((A.data.avis.find((a) => a.siren === siren) || A.data.dossiers.find((d) => d.siren === siren) || {}).nom) || '';
+    const r = await chrome.runtime.sendMessage({ type: 'ac:majClient', siren, nom }).catch((e) => ({ ok: false, error: e.message }));
+    if (!r || !r.ok) { mc.disabled = false; mc.classList.remove('spin'); mc.innerHTML = `${IC.refresh} Actualiser`; toast((r && r.error) || 'Actualisation impossible'); return; }
+    A.majClient = siren;
+  };
+  const od = $('#onSiteDettes'); if (od) od.onclick = () => openOnSite(siren, 'dettes');
+  const cn = $('#caNicOk'); if (cn) cn.onclick = () => saveCaNic(siren);
   const ci = $('#cnoteIn'), co = $('#cnoteOk');
   if (co) { const add = () => { const v = ci.value.trim(); if (v) saveCnotes(siren, [...(A.data.cnotes[siren] || []), { at: Date.now(), text: v }]).then(() => toast('Note ajoutée')); }; co.onclick = add; ci.onkeydown = (e) => { if (e.key === 'Enter') add(); }; }
   $$('[data-delnote]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); saveCnotes(siren, (A.data.cnotes[siren] || []).filter((n) => String(n.at) !== a.dataset.delnote)); });
@@ -415,7 +572,7 @@ function pageCollectivites() {
   if (!groups.length) return `<div class="ph"><div><h1>Collectivités</h1></div></div><div class="card empty">Aucun avis de taxe foncière ${A.c.annee} détaillé sur ce poste pour l’instant.</div>`;
   const d = P.cN - P.cN1;
   const top = decisions.slice(0, 4);
-  const lead = `Les cotisations de vos clients ${d >= 0 ? 'augmentent' : 'baissent'} de <b class="num">${sgn(d)}</b>${P.cN1 ? ` (${pcv(d / P.cN1 * 100)})` : ''}. ${P.taux > 0.5 ? `Les taux votés en expliquent <b class="num">${sgn(P.taux)}</b>${top.length ? `, dont ${plural(top.length, 'décision')} qui pèse${top.length > 1 ? 'nt' : ''} le plus : ${top.map((x) => `${esc(x.nom.toLowerCase())} de ${esc(x.communes.slice(0, 2).join(', '))}${x.communes.length > 2 ? ` et ${x.communes.length - 2} autre${x.communes.length > 3 ? 's' : ''}` : ''}`).join(' ; ')}` : ''}.` : 'Aucune hausse de taux significative.'}`;
+  const lead = `Les cotisations de vos clients ${d >= 0 ? 'augmentent' : 'baissent'} de <b class="num">${sgn(d)}</b>${P.cN1 ? ` (${pcv(d / P.cN1 * 100)})` : ''}. ${P.taux > 0.5 ? `Les taux votés en expliquent <b class="num">${sgn(P.taux)}</b>${top.length ? `, dont ${plural(top.length, 'décision')} qui pèse${top.length > 1 ? 'nt' : ''} le plus : ${top.map((x) => `${esc(x.nom.toLowerCase().replace(/\bgemapi\b/, 'GEMAPI').replace(/\bcfe\b/, 'CFE'))} de ${esc(x.communes.slice(0, 2).join(', '))}${x.communes.length > 2 ? ` et ${x.communes.length - 2} autre${x.communes.length > 3 ? 's' : ''}` : ''}`).join(' ; ')}` : ''}.` : 'Aucune hausse de taux significative.'}`;
   const qs = groups.filter((g) => match(g.nom, ...g.list.map((a) => a.nom)));
   const maxAbs = Math.max(1, ...qs.map((g) => Math.abs(g.taux) + Math.abs(g.bases) + Math.abs(g.nouveaux)));
   return `<div class="ph"><div><h1>Ce qui a changé dans vos collectivités</h1><div class="sub">Taxe foncière ${A.c.annee} · ${plural(P.avis, 'avis', 'avis')} ${scopeMoi() ? 'de votre portefeuille' : 'du cabinet'} · montants hors frais de gestion</div></div></div>
@@ -477,6 +634,7 @@ function pageExports() {
     <div class="card exp"><h2>${IC.down} Classeur Excel de la campagne</h2><p>Une feuille par usage : À traiter, avis ${A.c.annee} avec l’analyse des hausses, collectivités, dettes fiscales. Filtres et volets figés prêts à l’emploi.</p><button class="btn primary" data-exp="xlsx">Télécharger le classeur</button></div>
     <div class="card exp"><h2>${IC.doc} Avis PDF (.zip)</h2><p>${plural(N.filter((a) => a.hasPdf).length, 'avis', 'avis')} ${A.c.annee} et ${plural(n1.filter((a) => a.hasPdf).length, 'avis', 'avis')} ${A.c.anneeN1}, rangés dans un dossier par client.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-exp="zip">Avis ${A.c.annee}</button><button class="btn" data-exp="zip2">Avis ${A.c.annee} et ${A.c.anneeN1}</button></div></div>
     <div class="card exp"><h2>${IC.mail} Brouillons de mails (.zip)</h2><p>Un seul brouillon par client, qui regroupe tous ses points ouverts (paiements, hausses, créances, prélèvement), avis en pièce jointe. Chaque fichier s’ouvre dans Outlook ; rien n’est envoyé sans vous.</p><button class="btn" data-exp="mails">Préparer ${plural(new Set(openTasks().filter((t) => mailItem(t)).map((t) => t.siren)).size, 'brouillon')}</button></div>
+    <div class="card exp"><h2>${IC.ruler} Valeur locative des locaux professionnels</h2><p>Un local par ligne : statut (trop payé probable, possible, question, conforme), enjeu par an, action à faire, surfaces déclarées, secteur et tarif, base recalculée, base de l’avis, points à vérifier et questions au client.</p><button class="btn" data-exp="vlxlsx">Télécharger le classeur des locaux</button></div>
     <div class="card exp"><h2>${IC.print} Synthèse pour l’associé</h2><p>Une page : chiffres clés, actions par catégorie, plus fortes hausses, décisions des collectivités. À imprimer ou enregistrer en PDF.</p><a class="btn" href="#synthese">Ouvrir la synthèse</a></div>
   </div>`;
 }
@@ -486,6 +644,7 @@ async function doExport(kind, btn) {
   try {
     const stamp = jourISO(), port = scopeMoi() ? (A.S.moi ? clean(A.S.moi) : 'portefeuille') : 'cabinet';
     if (kind === 'xlsx') { download(buildXlsxCampagne(), `Releve_${A.c.annee}_${port}_${stamp}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('Classeur téléchargé'); }
+    else if (kind === 'vlxlsx') { download(buildXlsxVl(), `Releve_valeur_locative_${A.c.annee}_${port}_${stamp}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('Classeur des locaux téléchargé'); }
     else if (kind === 'zip' || kind === 'zip2') {
       const list = A.c.avis.filter((a) => a.hasPdf && (a.annee === A.c.annee || (kind === 'zip2' && a.annee === A.c.anneeN1)));
       const entries = [];
@@ -595,7 +754,11 @@ function openReclamation(t) {
   const rp = $('#rpdf'); if (rp) rp.onclick = () => openPdf(t.avis.id);
   $('#rdone').onclick = () => { close(); markDone(t.id); };
 }
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#modal').hidden) $('#modal').hidden = true; });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#modal').hidden) $('#modal').hidden = true;
+  // « / » : aller à la recherche (hors champ de saisie)
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) { const q = $('#q'); if (q) { e.preventDefault(); q.focus(); q.select(); } }
+});
 
 // ======================================================================
 // Réglages
@@ -605,31 +768,41 @@ function pageReglages() {
   const collabs = [...new Set(Object.values(c).map((v) => v.collaborateur).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
   return `<div class="ph"><div><h1>Réglages</h1><div class="sub">Enregistrés sur ce poste uniquement</div></div></div>
   <div class="form">
-    <div class="card"><label class="f">Fichier des dossiers du cabinet</label>
-      <div class="help">Facultatif. Un export CSV ou Excel de votre logiciel avec au moins le SIREN, et si possible le nom du client, le code dossier, le collaborateur et l’e-mail. Il sert aussi à repérer les clients absents de votre espace (Habilitations › Clients à raccorder). Les en-têtes sont reconnus automatiquement (séparateur ; , ou tabulation).</div>
-      <div class="inl"><input type="file" id="fCorr" accept=".csv,.txt,.xlsx,text/csv"><span class="small ${nC ? '' : 'muted'}">${nC ? `${plural(nC, 'dossier')} importé${nC > 1 ? 's' : ''}${collabs.length ? ` · ${plural(collabs.length, 'collaborateur')}` : ''}` : 'Aucun fichier importé'}</span>${nC ? '<button class="btn sm ghost" id="clrCorr">Retirer</button>' : ''}</div></div>
-    <div class="card"><label class="f">Chiffres d’affaires (contrôle de la base minimum de CFE)</label>
+    <nav class="subnav" aria-label="Sections des réglages">${[['#rDossiers', 'Dossiers'], ['#rCa', 'Chiffres d’affaires'], ['#rPortefeuille', 'Mon portefeuille'], ['#rSeuils', 'Seuils'], ['#rVl', 'Valeur locative'], ['#mcpCard', 'Claude'], ['#rAlertes', 'Alertes'], ['#saveCard', 'Sauvegarde'], ['#rDonnees', 'Données']].map(([h, t]) => `<a href="${h}" data-ancre="${h}">${t}</a>`).join('')}</nav>
+    <div class="card" id="rDossiers"><label class="f">Fichier des dossiers du cabinet</label>
+      <div class="help">Facultatif. Un export CSV ou Excel de votre logiciel avec au moins le SIREN, et si possible le nom du client, le code dossier, le collaborateur et <b>l’e-mail du client</b> (colonne dont l’en-tête contient « mail » ou « courriel ») : les messages préparés par Relève partent alors déjà adressés. Il sert aussi à repérer les clients absents de votre espace (Habilitations › Clients à raccorder). Un même SIREN sur plusieurs lignes (plusieurs dossiers) est accepté. Les en-têtes sont reconnus automatiquement (séparateur ; , ou tabulation).</div>
+      <div class="inl"><input type="file" id="fCorr" accept=".csv,.txt,.xlsx,text/csv"><span class="small ${nC ? '' : 'muted'}">${nC ? `${plural(nC, 'dossier')} importé${nC > 1 ? 's' : ''}${collabs.length ? ` · ${plural(collabs.length, 'collaborateur')}` : ''} · ${plural(Object.values(c).filter((v) => v.email).length, 'adresse e-mail', 'adresses e-mail')}` : 'Aucun fichier importé'}</span>${nC ? '<button class="btn sm ghost" id="clrCorr">Retirer</button>' : ''}</div></div>
+    ${comptesConnus().length ? `<div class="card" id="rComptes"><label class="f">Comptes impots.gouv</label>
+      <div class="help">Espaces professionnels (n° d’abonné) depuis lesquels des données ont été lues sur ce poste. Donnez-leur un nom (« Bureau de Fréjus », « Compte de Mylène »…) : il apparaît dans le filtre « Compte » en haut de l’application quand il y a plusieurs comptes. Chaque mise à jour rattache ce qu’elle lit au compte connecté ; un dossier présent dans deux espaces est rattaché aux deux.</div>
+      <table class="t"><thead><tr><th>N° d’abonné</th><th>Nom</th><th class="r">Dossiers</th><th>Dernière lecture</th><th></th></tr></thead><tbody>${comptesConnus().map(([ab, cp]) => `<tr><td class="num">${esc(ab)}</td><td><input class="cpNom" data-ab="${esc(ab)}" value="${esc(cp.nom || '')}" placeholder="Nom libre" style="width:220px"></td><td class="r num">${A.data.dossiers.filter((d) => (d.comptes || []).includes(ab)).length.toLocaleString('fr-FR')}</td><td class="small">${cp.vuAt ? ago(cp.vuAt) : '—'}</td><td class="r"><button class="btn sm ghost cpOubli" data-ab="${esc(ab)}" title="Retire les données lues uniquement depuis ce compte">Oublier</button></td></tr>`).join('')}</tbody></table>
+      <div class="inl" style="margin-top:8px"><button class="btn sm" id="cpSave">Enregistrer les noms</button>${A.data.dossiers.some((d) => !(d.comptes || []).length) ? `<span class="small muted">${plural(A.data.dossiers.filter((d) => !(d.comptes || []).length).length, 'dossier')} pas encore rattaché${A.data.dossiers.filter((d) => !(d.comptes || []).length).length > 1 ? 's' : ''} à un compte : une mise à jour suffit.</span>` : ''}</div></div>` : ''}
+    <div class="card" id="rCa"><label class="f">Chiffres d’affaires (contrôle de la base minimum de CFE)</label>
       <div class="help">Facultatif. Un fichier CSV ou Excel avec une ligne par exercice : SIREN, date de clôture, durée en mois, chiffre d’affaires HT (ou recettes) et, si possible, date de création. Pour la CFE ${ACA.anneeCampagne()}, l’exercice utile est celui clos en ${ACA.anneeCampagne() - 2}.</div>
       <div class="inl"><input type="file" id="fCa" accept=".csv,.txt,.xlsx,text/csv"><span class="small ${caCount() ? '' : 'muted'}">${caCount() ? `${plural(caCount(), 'client')} · ${plural(caRefCount(), 'exercice')} clos en ${ACA.anneeCampagne() - 2}` : 'Aucun fichier importé'}</span>${caCount() ? '<button class="btn sm ghost" id="clrCa">Retirer</button>' : ''}<a href="#" id="caModele" class="small">Télécharger un modèle</a></div></div>
-    <div class="card"><label class="f">Mon portefeuille</label>
+    <div class="card" id="rPortefeuille"><label class="f">Mon portefeuille</label>
       <div class="help">Pour travailler sur « Mon portefeuille » : choisissez votre nom (d’après le fichier des dossiers) et/ou collez la liste de vos SIREN.</div>
       <div class="inl" style="margin-bottom:10px"><span>Je suis</span><select id="moi" style="max-width:260px"><option value="">—</option>${collabs.map((x) => `<option ${x === S.moi ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>${!collabs.length ? '<span class="tiny muted">importez d’abord le fichier des dossiers</span>' : ''}</div>
       <textarea id="port" placeholder="SIREN ou SIRET, un par ligne ou séparés par des espaces">${esc((S.portefeuille || []).join('\n'))}</textarea>
       <div class="inl" style="margin-top:8px"><button class="btn sm" id="savePort">Enregistrer le portefeuille</button><span class="small muted">${plural(scopeSirens().length, 'dossier')} dans mon portefeuille</span></div></div>
-    <div class="card"><label class="f">Seuils d’alerte des hausses</label>
+    <div class="card" id="rSeuils"><label class="f">Seuils d’alerte des hausses</label>
       <div class="help">Une hausse entre dans la liste de travail si elle dépasse les deux seuils.</div>
       <div class="inl"><span>Au moins</span><input type="number" id="sPct" min="0" step="1" value="${S.seuilPct}"><span>% et</span><input type="number" id="sEur" min="0" step="10" value="${S.seuilEur}"><span>€</span><button class="btn sm" id="saveSeuil">Enregistrer</button></div></div>
     <div class="card"><label class="f">Créances</label>
       <div class="help">Les soldes inférieurs à ce montant (reliquats de quelques centimes) restent visibles dans la fiche client mais n’entrent pas dans la liste de travail.</div>
       <div class="inl"><span>Ignorer les soldes inférieurs à</span><input type="number" id="sDette" min="0" step="1" value="${S.seuilDette ?? 5}"><span>€</span><button class="btn sm" id="saveDette">Enregistrer</button></div>
-      <label class="inl" style="margin-top:10px;font-weight:400"><input type="checkbox" id="amrOn" ${S.amr !== false ? 'checked' : ''}> Lire aussi les documents à payer de « Payer › Dette fiscale » (avis de mise en recouvrement : pénalités, rappels). Lecture seule, aucun paiement.</label></div>
+      <label class="inl" style="margin-top:10px;font-weight:400"><input type="checkbox" id="amrOn" ${S.amr !== false ? 'checked' : ''}> Lire aussi les documents à payer de « Payer › Dette fiscale » (avis de mise en recouvrement : pénalités, rappels). Lecture seule, aucun paiement.</label>
+</div>
+    <div class="card" id="rVl"><label class="f">Valeur locative des locaux professionnels</label>
+      <div class="help">Relève refait le calcul de la taxe foncière de chaque local professionnel au tarif officiel et repère les clients qui paient probablement trop. <a href="#valeur-locative/lexique">Comprendre les termes</a>.</div>
+      <label class="inl" style="margin-top:6px;font-weight:400"><input type="checkbox" id="biensOn" ${S.biens !== false ? 'checked' : ''}> Lire les biens immobiliers de « Gérer mes biens immobiliers » à chaque mise à jour (surfaces, catégorie, parcelle de chaque local professionnel). Lecture seule, aucune déclaration.</label>
+      <label class="inl" style="margin-top:6px;font-weight:400"><input type="checkbox" id="cadastreOn" ${S.cadastre !== false ? 'checked' : ''}> Vérifier au cadastre (IGN) la surface de la parcelle, l’emprise du bâti et la photo aérienne de chaque local. Seule la référence cadastrale (commune, section, numéro) est transmise à la Géoplateforme de l’IGN : jamais le nom du client, le SIREN ni l’adresse. Résultat gardé sur ce poste un an.</label></div>
     <div class="card" id="mcpCard"><label class="f">Connexion à Claude (facultative)</label>
       <div class="help">Permet de poser des questions à Claude sur vos avis (« quels clients doivent payer avant le 15/12 ? », « prépare le message pour… ») depuis l’application Claude, grâce au connecteur Relève à installer dans Claude (<a href="https://releveavis.netlify.app/mode-emploi.html#claude" target="_blank">mode d’emploi</a>). Avec les noms masqués, Claude envoie ses réponses dans « Demander › Réponses de Claude », où les vrais noms sont remis sur ce poste.</div>
       <div class="warnbox" style="background:var(--warn-bg);color:#6B4500;padding:10px 12px;border-radius:9px;font-size:13px;margin:6px 0 10px">Quand cette connexion est active, les informations demandées par Claude (noms, montants, situation fiscale des clients) lui sont transmises pour produire ses réponses : elles quittent alors le poste. À n’activer qu’avec un compte Claude du cabinet et dans le respect de votre charte IA et du secret professionnel.</div>
       <label class="inl" style="font-weight:400"><input type="checkbox" id="mcpOn" ${A.S.mcp ? 'checked' : ''}> Activer la connexion à Claude sur ce poste</label>
       <label class="inl" style="font-weight:400;margin-top:6px"><input type="checkbox" id="mcpAnon" ${A.S.mcpAnon ? 'checked' : ''}> Masquer les noms et SIREN des clients (Claude voit « Client 4F2A »)</label>
       <div class="small" id="mcpState" style="margin-top:8px"></div></div>
-    <div class="card"><label class="f">Alertes et bandeau</label>
+    <div class="card" id="rAlertes"><label class="f">Alertes et bandeau</label>
       <label class="inl" style="font-weight:400"><input type="checkbox" id="notifOn" ${A.S.notif !== false ? 'checked' : ''}> Me prévenir par une notification : échéance dans 7 jours et la veille, avis de solde de CFE attendus, fin d’une longue mise à jour</label>
       <label class="inl" style="font-weight:400;margin-top:6px"><input type="checkbox" id="bannerOn" ${A.S.banner !== false ? 'checked' : ''}> Afficher un bandeau sur impots.gouv quand le dossier consulté a des actions en attente</label></div>
     <div class="card"><label class="f">Signature des messages</label>
@@ -640,13 +813,14 @@ function pageReglages() {
       <div class="inl"><input type="number" id="delai" min="80" max="2000" step="20" value="${S.delai}"><span>ms</span><button class="btn sm" id="saveDelai">Enregistrer</button></div></div>
     <div class="card"><label class="f">À propos</label>
       <div class="help">Relève ${esc(chrome.runtime.getManifest().version)} · créé par ${auteurLien()}, ${AUTEUR.titre} dans le Var.</div>
-      <div class="help">Outil indépendant, non affilié à la DGFiP. Code source ouvert sous licence EUPL 1.2 : <a href="https://github.com/rfroment85/releve" target="_blank" rel="noopener">github.com/rfroment85/releve</a>. Seule la version téléchargée sur <a href="https://releveavis.netlify.app/" target="_blank" rel="noopener">releveavis.netlify.app</a> est la version officielle.</div></div>
+      <div class="help">Outil indépendant, non affilié à la DGFiP. Code source ouvert sous licence EUPL 1.2 : <a href="https://github.com/rfroment85/releve" target="_blank" rel="noopener">github.com/rfroment85/releve</a>. Seule la version téléchargée sur <a href="https://releveavis.netlify.app/" target="_blank" rel="noopener">releveavis.netlify.app</a> est la version officielle.</div>
+      <div class="help">Logiciel libre et gratuit, fourni en l’état, <b>outil d’aide</b> qui ne remplace ni l’avis officiel ni le jugement du professionnel : <a href="${CGU_URL}" target="_blank" rel="noopener">conditions d’utilisation</a>.</div></div>
     <div class="card" id="saveCard"><label class="f">Sauvegarde</label>
       <div class="help">Enregistre dans un fichier ce qui ne peut pas être relu sur impots.gouv : actions faites ou reportées, notes, réglages, fichier des dossiers, chiffres d’affaires, réponses de Claude, suivi des demandes d’accès. À faire de temps en temps, et toujours avant de changer de poste ou de réinstaller l’extension.</div>
       <div class="help" id="saveInfo">${A.backupAt ? `Dernière sauvegarde : ${ago(A.backupAt)}` : 'Aucune sauvegarde pour l’instant.'}</div>
       <div class="inl"><button class="btn primary sm" id="bkSave">${IC.down} Sauvegarder mes données</button><button class="btn sm" id="bkLoad">Restaurer une sauvegarde…</button><input type="file" id="bkFile" accept=".json,application/json" hidden></div></div>
-    <div class="card"><label class="f">Données sur ce poste</label>
-      <div class="help" id="usage">${plural(A.data.avis.length, 'avis', 'avis')} · ${plural(A.data.avis.filter((a) => a.hasPdf).length, 'PDF')} · ${plural(A.data.dettes.length, 'situation fiscale', 'situations fiscales')} · ${plural(A.data.runs.length, 'mise à jour', 'mises à jour')}</div>
+    <div class="card" id="rDonnees"><label class="f">Données sur ce poste</label>
+      <div class="help" id="usage">${plural(A.data.avis.length, 'avis', 'avis')} · ${plural(A.data.avis.filter((a) => a.hasPdf).length, 'PDF')} · ${plural(A.data.dettes.length, 'situation fiscale', 'situations fiscales')} · ${plural((A.data.paiements || []).length, 'synthèse de paiements', 'synthèses de paiements')} · ${plural(A.data.runs.length, 'mise à jour', 'mises à jour')}</div>
       <div class="help">Version ${esc(chrome.runtime.getManifest().version)} · <a href="https://releveavis.netlify.app/mode-emploi.html" target="_blank">mode d’emploi</a></div>
       <div class="help">Tout est stocké dans le navigateur de ce poste, rien n’est envoyé à un serveur. Désinstaller l’extension efface ces données.</div>
       <button class="btn" id="wipe">${IC.trash} Effacer toutes les données</button></div>
@@ -654,7 +828,10 @@ function pageReglages() {
 }
 const caCount = () => Object.keys(A.data.ca || {}).length;
 const caRefCount = () => Object.values(A.data.ca || {}).filter((o) => (o.exos || []).some((e) => String(e.cloture).slice(-4) === String(ACA.anneeCampagne() - 2))).length;
+// Ancres internes (sous-navigation de la fiche et des réglages) : défilement sans toucher au hash, qui sert de route
+function bindAncres() { $$('[data-ancre]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); const e = $(a.dataset.ancre); if (e) { e.scrollIntoView({ behavior: calme() ? 'auto' : 'smooth', block: 'start' }); $$('.subnav a').forEach((x) => x.classList.toggle('on', x === a)); } }); }
 function bindReglages() {
+  bindAncres();
   $('#fCa').onchange = async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
     try {
@@ -672,11 +849,17 @@ function bindReglages() {
   navigator.storage && navigator.storage.estimate && navigator.storage.estimate().then((e) => { const u = $('#usage'); if (u) u.textContent += ` · ${(e.usage / 1048576).toFixed(0)} Mo utilisés`; });
   $('#fCorr').onchange = async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
-    const map = parseCorrespondance(await fileToText(f)), n = Object.keys(map).length;
+    const map = parseCorrespondance(await fileToText(f)), n = Object.keys(map).length, nM = Object.values(map).filter((v) => v.email).length;
     if (!n) { toast('Aucun SIREN reconnu dans ce fichier'); return; }
-    save({ correspondance: map }, `${plural(n, 'dossier')} importé${n > 1 ? 's' : ''}`);
+    save({ correspondance: map }, `${plural(n, 'dossier')} importé${n > 1 ? 's' : ''} · ${nM ? plural(nM, 'adresse e-mail', 'adresses e-mail') : 'aucune colonne e-mail reconnue'}`);
   };
   const cc = $('#clrCorr'); if (cc) cc.onclick = () => save({ correspondance: {}, moi: '' }, 'Fichier retiré');
+  const cps = $('#cpSave'); if (cps) cps.onclick = () => { const c = { ...(A.S.comptes || {}) }; $$('.cpNom').forEach((i) => { c[i.dataset.ab] = { ...(c[i.dataset.ab] || {}), nom: i.value.trim() }; }); save({ comptes: c }, 'Noms des comptes enregistrés'); };
+  $$('.cpOubli').forEach((b) => b.onclick = async () => {
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.classList.remove('ghost'); b.classList.add('primary'); b.textContent = 'Confirmer'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.classList.add('ghost'); b.classList.remove('primary'); b.textContent = 'Oublier'; } }, 5000); return; }
+    const r = await chrome.runtime.sendMessage({ type: 'ac:oublierCompte', compte: b.dataset.ab }).catch(() => null);
+    await load(); render(); toast(r && r.ok ? `Compte oublié · ${plural(r.supprimes || 0, 'donnée retirée', 'données retirées')}` : 'Opération impossible');
+  });
   $('#moi').onchange = (ev) => save({ moi: ev.target.value }, ev.target.value ? `Portefeuille de ${ev.target.value}` : 'Enregistré');
   $('#savePort').onclick = () => { const l = [...new Set(($('#port').value.match(/\d[\d ]{8,16}/g) || []).map((x) => x.replace(/\D/g, '')).filter((x) => x.length === 9 || x.length === 14).map((x) => x.slice(0, 9)))]; save({ portefeuille: l }, `${plural(l.length, 'SIREN')} enregistré${l.length > 1 ? 's' : ''}`); };
   $('#saveSeuil').onclick = () => save({ seuilPct: Math.max(0, +$('#sPct').value || 0), seuilEur: Math.max(0, +$('#sEur').value || 0) });
@@ -695,6 +878,8 @@ function bindReglages() {
   $('#bannerOn').onchange = (ev) => save({ banner: ev.target.checked });
   $('#saveDette').onclick = () => save({ seuilDette: Math.max(0, +$('#sDette').value || 0) });
   $('#amrOn').onchange = (ev) => save({ amr: ev.target.checked }, ev.target.checked ? 'Documents à payer : lus à la prochaine mise à jour' : 'Documents à payer : non lus');
+  $('#biensOn').onchange = (ev) => save({ biens: ev.target.checked }, ev.target.checked ? 'Biens immobiliers : lus à la prochaine mise à jour' : 'Biens immobiliers : non lus');
+  $('#cadastreOn').onchange = (ev) => save({ cadastre: ev.target.checked }, ev.target.checked ? 'Cadastre : vérifié à la prochaine ouverture de la page Valeur locative' : 'Cadastre : non consulté');
   $('#saveSig').onclick = () => save({ signature: $('#sig').value.trim() });
   $('#saveDelai').onclick = () => save({ delai: Math.min(2000, Math.max(80, +$('#delai').value || 120)) });
   $('#bkSave').onclick = sauvegarder;
@@ -703,8 +888,8 @@ function bindReglages() {
   const w = $('#wipe');
   w.onclick = async () => {
     if (!w.dataset.armed) { w.dataset.armed = '1'; w.classList.add('primary'); w.textContent = 'Cliquez à nouveau pour tout effacer'; setTimeout(() => { if (w.isConnected) { delete w.dataset.armed; w.classList.remove('primary'); w.innerHTML = `${IC.trash} Effacer toutes les données`; } }, 5000); return; }
-    for (const s of ['avis', 'pdfs', 'dossiers', 'dettes', 'tasks', 'runs']) await ACDB.clear(s);
-    await ACDB.del('meta', 'dossierList');
+    for (const s of ['avis', 'pdfs', 'dossiers', 'dettes', 'tasks', 'runs', 'paiements', 'biens']) await ACDB.clear(s);
+    await ACDB.del('meta', 'dossierList'); await ACDB.del('meta', 'cycle'); await ACDB.del('meta', 'vlResume');
     await load(); render(); chrome.runtime.sendMessage({ type: 'ac:refreshBadge' }).catch(() => {}); chrome.runtime.sendMessage({ type: 'ac:resetState' }).catch(() => {});
     toast('Données effacées (les réglages sont conservés)');
   };
@@ -716,13 +901,14 @@ function bindReglages() {
 function pageBienvenue() {
   return `<div class="welcome"><span class="logo" style="width:44px;height:44px;border-radius:12px">${IC.logo}</span>
   <h1 style="margin-top:14px">Bienvenue dans Relève</h1>
-  <p class="lead" style="margin-top:8px">Les avis de taxe foncière et de CFE de tous vos clients, lus dans votre espace professionnel impots.gouv, analysés et rangés par urgence.</p>
+  <p class="lead" style="margin-top:8px">Les avis de taxe foncière et de CFE de tous vos clients, lus dans votre espace professionnel impots.gouv, analysés et rangés par urgence. Et, pour chaque local professionnel, le calcul de l’administration refait au tarif officiel pour repérer ceux qui paient trop.</p>
   <div class="steps">
     <div class="step card"><div><b>Épinglez l’icône</b><div class="muted small">Cliquez sur l’icône puzzle à droite de la barre d’adresse, puis sur la punaise à côté de Relève.</div></div></div>
     <div class="step card"><div><b>Connectez-vous à votre espace professionnel impots.gouv</b><div class="muted small">Comme d’habitude : vous saisissez vous-même vos identifiants, l’extension ne les voit jamais.</div></div></div>
     <div class="step card"><div><b>Cliquez sur l’icône, puis sur « Mettre à jour mes clients »</b><div class="muted small">La première fois prend quelques dizaines de minutes pour un gros cabinet ; ensuite seuls les nouveaux avis sont lus.</div></div></div>
   </div>
-  <div class="card av"><h3>${IC.shield} Confidentialité</h3><p class="small" style="margin:0;color:var(--ink2)">Relève lit uniquement les pages « avis de CFE », « avis de taxe foncière », « situation de la dette fiscale » et, à votre demande, la liste de vos habilitations. Il ne paie rien, n’envoie aucun message, ne modifie rien sur le site. Les avis et analyses restent dans le navigateur de ce poste ; aucun serveur ne les reçoit.</p></div>
+  <div class="card av"><h3>${IC.shield} Confidentialité</h3><p class="small" style="margin:0;color:var(--ink2)">Relève lit uniquement les pages « avis de CFE », « avis de taxe foncière », « situation de la dette fiscale », « paiements d’impôts locaux », « Gérer mes biens immobiliers » et, à votre demande, la liste de vos habilitations. Il ne paie rien, n’envoie aucun message, ne modifie rien sur le site. Les avis et analyses restent dans le navigateur de ce poste ; aucun serveur ne les reçoit.</p></div>
+  <div class="card av"><h3>Ce que Relève est, et n’est pas</h3><p class="small" style="margin:0;color:var(--ink2)">Relève est un logiciel libre et gratuit, créé par un expert-comptable à titre personnel, pour les cabinets, les comptables d’entreprise, les DAF et les chefs d’entreprise. C’est un <b>outil d’aide</b> : ses calculs sont des estimations à partir de données publiques ; il ne rend aucun avis fiscal et ne remplace ni l’avis officiel ni votre jugement. Toute décision ou réclamation reste la vôtre, après vérification. Il est fourni en l’état, sans garantie, et son auteur ne peut être tenu responsable de son usage, dans les limites permises par la loi. <a href="${CGU_URL}" target="_blank" rel="noopener">Lire les conditions d’utilisation</a>.</p></div>
   <div style="display:flex;gap:8px"><a class="btn primary" href="https://cfspro.impots.gouv.fr/mire/accueil.do" target="_blank">${IC.ext} Ouvrir mon espace professionnel</a><a class="btn" href="#reglages">Réglages facultatifs</a></div></div>
   <p class="tiny muted" style="margin-top:18px">Relève est créé par ${auteurLien()}, ${AUTEUR.titre}. Code source ouvert (EUPL 1.2).</p>`;
 }
@@ -740,12 +926,17 @@ function pageSynthese() {
   <div class="kpis" style="margin-top:16px">
     <div class="card"><div class="l">Avis ${C.annee}</div><div class="v num">${C.N.length}</div><div class="l">${plural(new Set(C.N.map((a) => a.siren)).size, 'client')}</div></div>
     <div class="card"><div class="l">Évolution à périmètre comparable</div><div class="v num">${C.tot.n1 ? pcv((C.tot.n / C.tot.n1 - 1) * 100) : '—'}</div><div class="l num">${eur(C.tot.n1)} → ${eur(C.tot.n)}</div></div>
-    <div class="card"><div class="l">Actions ouvertes</div><div class="v num">${open.length}</div><div class="l">${C.CATS.map((k) => { const n = open.filter((t) => t.cat === k.key).length; return n ? `${n} ${k.titre.toLowerCase()}` : ''; }).filter(Boolean).slice(0, 2).join(' · ')}</div></div>
+    <div class="card"><div class="l">Actions ouvertes</div><div class="v num">${open.length}</div><div class="l">${C.CATS.map((k) => { const n = open.filter((t) => t.cat === k.key).length; return n ? `${k.titre.toLowerCase()} : ${n}` : ''; }).filter(Boolean).slice(0, 2).join(' · ')}</div></div>
     <div class="card"><div class="l">Créances échues</div><div class="v num">${eur(dette)}</div><div class="l">dettes fiscales et AMR à payer</div></div>
   </div>
   <h2>Actions par catégorie</h2><table class="t"><tbody>${C.CATS.map((k) => { const n = open.filter((t) => t.cat === k.key); return `<tr><td><b>${esc(k.titre)}</b><div class="tiny muted">${esc(k.aide)}</div></td><td class="r num">${n.length}</td><td class="r num">${eur(n.reduce((s, t) => s + (t.montant || 0), 0))}</td></tr>`; }).join('')}</tbody></table>
   ${P.avis ? `<h2 style="margin-top:20px">Taxe foncière : origine de l’évolution</h2><p>${eur(P.cN1)} → ${eur(P.cN)} (${sgn(P.cN - P.cN1)}) : taux votés ${sgn(P.taux)}, bases ${sgn(P.bases)}, biens nouvellement imposés ${sgn(P.nouveaux)}.</p>
   ${A.coll.decisions.length ? `<table class="t"><thead><tr><th>Décision</th><th>Communes</th><th class="r">Impact</th></tr></thead><tbody>${A.coll.decisions.slice(0, 6).map((x) => `<tr><td>${esc(x.nom)} : ${esc(x.tN1)} % → ${esc(x.tN)} %</td><td class="small">${esc(x.communes.slice(0, 4).join(', '))}${x.communes.length > 4 ? '…' : ''}</td><td class="r num">${sgn(x.eff)}</td></tr>`).join('')}</tbody></table>` : ''}` : ''}
+  ${(() => { const L = ((A.data.vlResume && A.data.vlResume.locaux) || []).filter((l) => !scopeMoi() || scopeSirens().includes(l.siren)); if (!L.length) return ''; const trop = L.filter((l) => l.statut === 'TROP'), piste = L.filter((l) => l.statut === 'PISTE'), e = trop.reduce((s, l) => s + l.enjeu, 0), eP = piste.reduce((s, l) => s + l.enjeu, 0);
+    const nQ = L.filter((l) => l.statut === 'QUESTION').length, nOk = L.filter((l) => l.statut === 'OK' || l.statut === 'FAVORABLE').length;
+    const parts = [trop.length ? `<b>${plural(trop.length, 'trop payé probable', 'trop payés probables')}</b> (${eur(e)} par an, ${trop.length > 1 ? 'réclamations' : 'réclamation'} à préparer)` : '', piste.length ? `${plural(piste.length, 'trop payé possible', 'trop payés possibles')} (${eur(eP)} par an, ${piste.length > 1 ? 'relevés' : 'relevé'} de propriété à demander)` : '', nQ ? `${plural(nQ, 'question')} au client` : '', nOk ? `${plural(nOk, 'local conforme', 'locaux conformes')}` : ''].filter(Boolean);
+    return `<h2 style="margin-top:20px">Valeur locative des locaux professionnels</h2><p>${plural(L.length, 'local contrôlé', 'locaux contrôlés')} au tarif officiel${parts.length ? ' : ' + parts.join(', ') : ''}.</p>
+    ${trop.length || piste.length ? `<table class="t"><thead><tr><th>Client</th><th>Local</th><th>Statut</th><th class="r">Enjeu / an</th></tr></thead><tbody>${[...trop, ...piste].slice(0, 8).map((l) => `<tr><td><b>${esc(l.nom)}</b></td><td class="small">${esc(l.adresse)} · ${esc((l.ville || '').replace(/\s*\(.*\)\s*$/, ''))}</td><td>${esc(l.libelle)}</td><td class="r num">${eur(l.enjeu)}</td></tr>`).join('')}</tbody></table>` : ''}`; })()}
   ${hausses.length ? `<h2 style="margin-top:20px">Plus fortes hausses</h2><table class="t"><thead><tr><th>Client</th><th>Avis</th><th class="r">${C.anneeN1}</th><th class="r">${C.annee}</th><th class="r">Écart</th><th>Analyse</th></tr></thead><tbody>${hausses.map((a) => `<tr><td><b>${esc(a.nom)}</b></td><td class="small">${TAXE_LABEL[a.taxe]} ${esc(a.commune || '')}</td><td class="r num">${eur(a.n1.m)}</td><td class="r num">${eur(a.m)}</td><td class="r num up">${sgn(a.d.delta)}</td><td class="tiny">${esc((a.d.verdict || '').length > 150 ? a.d.verdict.slice(0, 150).replace(/\s+\S*$/, '') + '…' : (a.d.verdict || ''))}</td></tr>`).join('')}</tbody></table>` : ''}
   </div>`;
 }
@@ -819,17 +1010,20 @@ function bindDemander(arg) {
 // ======================================================================
 // Habilitations (lecture seule de « Gérer mon espace › Consulter mes services ») et clients à raccorder
 // ======================================================================
-A.hf = { q: '', service: '', role: '', etat: '1', collab: '', mode: 'avec' }; A.rf = { q: '', collab: '', statut: '' }; A.rsel = new Set();
+A.hf = { q: '', service: '', role: '', etat: '1', collab: '', mode: 'avec', compte: '' }; A.rf = { q: '', collab: '', statut: '' }; A.rsel = new Set();
 const ROLE_LIB = { AT: 'Titulaire', AS: 'Suppléant', N1: 'Délégant', N2: 'Acteur' }, ETAT_LIB = { 1: 'Actif', 2: 'En veille', 3: 'Supprimé' };
 const SERVICE_CLE = 'Consulter le Compte fiscal';
 function nomDe(siren) {
   const c = (A.S.correspondance || {})[siren] || {};
-  return (A.habil && A.habil.noms && A.habil.noms[siren]) || (A.dossierList.find((d) => d.siren === siren) || {}).nom || (A.data.avis.find((a) => a.siren === siren) || {}).nom || c.nom || '';
+  const dans = (arr) => { const x = (arr || []).find((r) => r.siren === siren); return x && x.nom && !/^Entreprise \d{9}$/.test(x.nom) ? x.nom : ''; };
+  return (A.habil && A.habil.noms && A.habil.noms[siren]) || (A.dossierList.find((d) => d.siren === siren) || {}).nom || dans(A.data.avis) || dans(A.data.dossiers) || dans(A.data.biens) || dans(A.data.dettes) || c.nom || '';
 }
+// Lignes d'habilitations du compte filtré (A.hf.compte = index du compte dans A.habil.comptes, '' = tous)
+function habRows() { const H = A.habil; if (!H) return []; const f = A.hf.compte; return f === '' || f === undefined || !(H.comptes || []).length ? H.rows : H.rows.filter((r) => String(r[4] || 0) === String(f)); }
 // SIREN raccordés (au moins un service actif) et SIREN dont le compte fiscal est consultable
 function etatRaccord() {
   const base = new Set(), cf = new Set();
-  if (A.habil) { const icf = A.habil.services.indexOf(SERVICE_CLE); for (const [s, i, , e] of A.habil.rows) if (e === 1) { base.add(s); if (i === icf) cf.add(s); } }
+  if (A.habil) { const icf = A.habil.services.indexOf(SERVICE_CLE); for (const [s, i, , e] of habRows()) if (e === 1) { base.add(s); if (i === icf) cf.add(s); } }
   else for (const d of A.dossierList) { base.add(d.siren); cf.add(d.siren); }
   return { base, cf, source: A.habil ? 'habilitations' : (A.dossierList.length ? 'liste des dossiers' : '') };
 }
@@ -868,14 +1062,14 @@ function pageHabil(arg) {
 }
 // Dossiers de référence : tous ceux où le compte a au moins un service actif, plus ceux du fichier des dossiers
 function universHabil() {
-  const u = new Set(); for (const [s, , , e] of A.habil.rows) if (e === 1) u.add(s);
+  const u = new Set(); for (const [s, , , e] of habRows()) if (e === 1) u.add(s);
   for (const s of Object.keys(A.S.correspondance || {})) u.add(s);
   return u;
 }
 // Dossiers SANS un service donné (actif) : jamais attribué, supprimé ou en veille
 function sansService(iS) {
-  const etat = new Map(); for (const [s, i, , e] of A.habil.rows) if (i === iS) { const p = etat.get(s); if (!p || e < p) etat.set(s, e); }
-  const autres = new Map(); for (const [s, , , e] of A.habil.rows) if (e === 1) autres.set(s, (autres.get(s) || 0) + 1);
+  const etat = new Map(); for (const [s, i, , e] of habRows()) if (i === iS) { const p = etat.get(s); if (!p || e < p) etat.set(s, e); }
+  const autres = new Map(); for (const [s, , , e] of habRows()) if (e === 1) autres.set(s, (autres.get(s) || 0) + 1);
   return [...universHabil()].filter((s) => etat.get(s) !== 1).map((s) => ({ siren: s, etat: etat.get(s) || 0, autres: autres.get(s) || 0 }));
 }
 // Ce qui est affiché avec les filtres en cours (sert aussi à l'export de la sélection)
@@ -893,7 +1087,7 @@ function habVue() {
   }
   const okRow = ([s, i, r, e]) => (iS < 0 || i === iS) && (!f.role || r === f.role) && (!f.etat || e === +f.etat) && (!f.collab || (corr[s] || {}).collaborateur === f.collab);
   const parSiren = new Map();
-  for (const row of H.rows) { if (!okRow(row)) continue; let o = parSiren.get(row[0]); if (!o) { o = []; parSiren.set(row[0], o); } o.push(row); }
+  for (const row of habRows()) { if (!okRow(row)) continue; let o = parSiren.get(row[0]); if (!o) { o = []; parSiren.set(row[0], o); } o.push(row); }
   let dossiers = [...parSiren.entries()].map(([s, l]) => ({ siren: s, nom: nomDe(s), code: (corr[s] || {}).code || '', collab: (corr[s] || {}).collaborateur || '', l }));
   dossiers = dossiers.filter((d) => okQ(d.nom + ' ' + d.siren + ' ' + d.code + ' ' + d.collab));
   dossiers.sort((a, b) => (a.nom || 'zz').localeCompare(b.nom || 'zz', 'fr'));
@@ -925,15 +1119,21 @@ function pageHabListe() {
   const f = A.hf, corr = A.S.correspondance || {};
   const collabs = [...new Set(Object.values(corr).map((v) => v.collaborateur).filter(Boolean))].sort();
   const { iS, sansMode, q, dossiers, nLignes, sans } = habVue();
-  const tot = { 1: 0, 2: 0, 3: 0 }, roles = { AT: 0, AS: 0, N1: 0, N2: 0 }; for (const [, , r, e] of H.rows) { tot[e]++; if (e === 1 && roles[r] !== undefined) roles[r]++; }
-  const parService = H.services.map((nom, i) => ({ nom, i, n: H.rows.filter((x) => x[1] === i && (!f.role || x[2] === f.role) && (!f.etat || x[3] === +f.etat) && (!f.collab || (corr[x[0]] || {}).collaborateur === f.collab)).length })).filter((x) => x.n).sort((a, b) => b.n - a.n);
+  const rowsC = habRows();
+  const tot = { 1: 0, 2: 0, 3: 0 }, roles = { AT: 0, AS: 0, N1: 0, N2: 0 }; for (const [, , r, e] of rowsC) { tot[e]++; if (e === 1 && roles[r] !== undefined) roles[r]++; }
+  const parService = H.services.map((nom, i) => ({ nom, i, n: rowsC.filter((x) => x[1] === i && (!f.role || x[2] === f.role) && (!f.etat || x[3] === +f.etat) && (!f.collab || (corr[x[0]] || {}).collaborateur === f.collab)).length })).filter((x) => x.n).sort((a, b) => b.n - a.n);
+  const comptesH = H.comptes || [];
+  const sansNom = [...new Set(rowsC.map((x) => x[0]))].filter((s) => !nomDe(s)).length;
   const sel = (id, opts, v, lib) => `<label class="flt"><span>${lib}</span><select id="${id}">${opts.map(([k, t]) => `<option value="${esc(k)}"${String(v) === String(k) ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
   return `<div class="card" style="padding:12px 14px;margin-bottom:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
-      <span class="small">Lu ${ago(H.at)} · <b>${plural(new Set(H.rows.map((x) => x[0])).size, 'dossier')}</b> · ${plural(tot[1], 'habilitation active', 'habilitations actives')}${tot[2] ? ` · ${tot[2]} en veille` : ''}${tot[3] ? ` · ${tot[3]} supprimées` : ''}</span>
+      <span class="small">Lu ${ago(H.at)}${comptesH.length > 1 ? ` · ${plural(comptesH.length, 'compte')}` : ''} · <b>${plural(new Set(rowsC.map((x) => x[0])).size, 'dossier')}</b> · ${plural(tot[1], 'habilitation active', 'habilitations actives')}${tot[2] ? ` · ${tot[2]} en veille` : ''}${tot[3] ? ` · ${tot[3]} supprimées` : ''}</span>
+      ${sansNom ? `<span class="small muted" title="La page des habilitations ne donne que le SIREN ; les noms viennent de la liste des dossiers, des avis ou du fichier des dossiers">${plural(sansNom, 'dossier sans nom connu', 'dossiers sans nom connu')} : une mise à jour des clients ou le fichier des dossiers les complète</span>` : ''}
+      ${(H.echecs || []).length ? `<span class="small muted" title="${esc((H.echecs || []).join(' · '))}">Liste des noms non lue pour un compte</span>` : ''}
       <span class="small muted">Rôles actifs : titulaire ${roles.AT} · suppléant ${roles.AS} · délégant ${roles.N1} · acteur ${roles.N2}</span>
       <span style="margin-left:auto;display:flex;gap:8px"><button class="btn sm" id="habGo">${IC.refresh} Actualiser</button><button class="btn sm" id="habXlsx" title="Toutes les habilitations, la matrice dossiers × services et les clients à raccorder">${IC.down} Tout exporter</button></span></div>
     <div class="card filtres">
       <label class="flt"><span>Rechercher</span><input id="hq" type="search" value="${esc(f.q)}" placeholder="Client, SIREN, code" style="width:180px"></label>
+      ${comptesH.length > 1 ? sel('hCompte', [['', 'Tous les comptes'], ...comptesH.map((ab, i) => [i, compteLib(ab) + (H.lectures && H.lectures[ab] ? ' · ' + ago(H.lectures[ab]) : '')])], f.compte, 'Compte impots.gouv') : ''}
       ${sel('hService', [['', 'Tous les services'], ...H.services.map((x, i) => [i, x])], f.service, 'Service')}
       ${iS >= 0 ? sel('hMode', [['avec', 'Dossiers avec ce service'], ['sans', 'Dossiers SANS ce service']], f.mode, 'Afficher') : ''}
       ${sansMode ? '' : sel('hRole', [['', 'Tous'], ...Object.entries(ROLE_LIB)], f.role, 'Rôle')}
@@ -942,14 +1142,14 @@ function pageHabListe() {
       <button class="btn sm ghost" id="hReset" type="button">Effacer les filtres</button></div>
     <div class="cols"><div class="card rep">${sansMode ? sansHtml(iS, sans, corr) : `
       <div class="selhead"><p class="small" style="margin:0"><b>${plural(dossiers.length, 'dossier')}</b> · ${plural(nLignes, 'habilitation')}</p>${dossiers.length ? `<button class="btn sm" id="habSelXlsx">${IC.down} Exporter la sélection</button>` : ''}</div>
-      ${dossiers.length ? `<table class="t"><thead><tr><th>Client</th><th>Collaborateur</th><th>Services</th></tr></thead>${lignesProgressives('habBody', dossiers.map((d) => `<tr><td><b>${esc(d.nom || '—')}</b><div class="tiny muted">${fmtSiren(d.siren)}${d.code ? ' · ' + esc(d.code) : ''}</div></td><td class="small">${esc(d.collab)}</td><td>${d.l.map(([, i, r, e]) => `<span class="hchip e${e}" title="${esc(H.services[i])} · ${ROLE_LIB[r] || '?'} · ${ETAT_LIB[e]}">${esc(H.services[i])}<i>${ROLE_LIB[r] || ''}</i></span>`).join('')}</td></tr>`))}</table>` : '<div class="empty">Aucune habilitation avec ces filtres.</div>'}`}
+      ${dossiers.length ? `<table class="t"><thead><tr><th>Client</th><th>Collaborateur</th><th>Services</th></tr></thead>${lignesProgressives('habBody', dossiers.map((d) => `<tr><td><b>${esc(d.nom || '—')}</b><div class="tiny muted">${fmtSiren(d.siren)}${d.code ? ' · ' + esc(d.code) : ''}</div></td><td class="small">${esc(d.collab)}</td><td>${d.l.map(([, i, r, e, , det]) => `<span class="hchip e${e}" title="${esc(H.services[i])} · ${ROLE_LIB[r] || '?'} · ${ETAT_LIB[e]}${det ? ` · ${det.total} lignes sur le site : ${det.actives} active${det.actives > 1 ? 's' : ''}${det.veille ? `, ${det.veille} en veille` : ''}${det.supprimees ? `, ${det.supprimees} supprimée${det.supprimees > 1 ? 's' : ''}` : ''}` : ''}">${esc(H.services[i])}<i>${ROLE_LIB[r] || ''}</i>${det ? '<u title="Plusieurs lignes pour ce service sur le site">·</u>' : ''}</span>`).join('')}</td></tr>`))}</table>` : '<div class="empty">Aucune habilitation avec ces filtres.</div>'}`}
     </div>
     <aside class="rail"><div class="card"><h3>Par service</h3><div class="tiny muted" style="margin:-4px 0 6px">avec / sans, sur ${plural(universHabil().size, 'dossier')}</div><table class="t"><tbody>${couverture().map((x) => `<tr><td class="small">${esc(x.nom)}</td><td class="r num"><a href="#" data-svc="${x.i}" data-mode="avec" title="Dossiers avec ce service">${x.avec}</a></td><td class="r num"><a href="#" data-svc="${x.i}" data-mode="sans" title="Dossiers sans ce service" style="color:var(--bad)">${x.sans}</a></td></tr>`).join('')}</tbody></table></div>
       <div class="card"><h3>Modifier une habilitation</h3><p class="small muted" style="margin:0 0 8px">Relève ne modifie rien. Sur impots.gouv : « Gérer mon espace », puis « Gérer mes délégations » ou « Gérer mes administrateurs suppléants ».</p><a class="btn sm" href="https://cfspro.impots.gouv.fr/mire/accueil.do" target="_blank">${IC.ext} Ouvrir impots.gouv</a></div></aside></div>`;
 }
 function couverture() {
   const H = A.habil, u = universHabil(), actif = H.services.map(() => new Set());
-  for (const [s, i, , e] of H.rows) if (e === 1) actif[i].add(s);
+  for (const [s, i, , e] of habRows()) if (e === 1) actif[i].add(s);
   return H.services.map((nom, i) => ({ nom, i, avec: actif[i].size, sans: u.size - [...actif[i]].filter((s) => u.has(s)).length })).sort((a, b) => b.avec - a.avec);
 }
 function sansHtml(iS, l, corr) {
@@ -1046,9 +1246,9 @@ function bindHabil(arg) {
   };
   const x = $('#habXlsx'); if (x) x.onclick = () => download(buildXlsxHabil(), `Releve_habilitations_${jourISO()}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   const on = (id, o, k, ev = 'onchange') => { const e = $('#' + id); if (e) e[ev] = () => { A[o] = { ...A[o], [k]: e.value }; page(); if (ev === 'oninput') { const n = $('#' + id); n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }; };
-  on('hService', 'hf', 'service'); on('hMode', 'hf', 'mode'); on('hRole', 'hf', 'role'); on('hEtat', 'hf', 'etat'); on('hCollab', 'hf', 'collab'); on('hq', 'hf', 'q', 'oninput');
+  on('hService', 'hf', 'service'); on('hMode', 'hf', 'mode'); on('hRole', 'hf', 'role'); on('hEtat', 'hf', 'etat'); on('hCollab', 'hf', 'collab'); on('hCompte', 'hf', 'compte'); on('hq', 'hf', 'q', 'oninput');
   on('rStatut', 'rf', 'statut'); on('rCollab', 'rf', 'collab'); on('rq', 'rf', 'q', 'oninput');
-  const rs = $('#hReset'); if (rs) rs.onclick = () => { A.hf = { q: '', service: '', role: '', etat: '1', collab: '', mode: 'avec' }; page(); };
+  const rs = $('#hReset'); if (rs) rs.onclick = () => { A.hf = { q: '', service: '', role: '', etat: '1', collab: '', mode: 'avec', compte: '' }; page(); };
   $$('[data-svc]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); A.hf = { ...A.hf, service: a.dataset.svc, mode: a.dataset.mode || 'avec' }; page(); window.scrollTo(0, 0); });
   const ab = $('#rAbonne'); if (ab) ab.onchange = async () => { A.S = await ACDB.saveSettings({ abonne: ab.value.replace(/\D/g, '') }); A.data.settings = A.S; toast('Numéro d’abonné enregistré'); };
   for (const id of ['habSelXlsx', 'rXlsx']) { const b = $('#' + id); if (b) b.onclick = () => { const x = xlsxSelection(); download(x.wb, `Releve_${x.nom}_${jourISO()}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('Sélection exportée'); }; }
@@ -1131,11 +1331,13 @@ async function restaurer(bk) {
 function bindPage(p, arg) {
   if (p === 'a-traiter' || !p) { bindTraiter(); animerBarre(); }
   if (p === 'clients') bindClients();
+  if (p === 'dettes') bindDettes();
   if (p === 'client') bindClient(arg);
   if (p === 'collectivites') bindCollectivites();
   if (p === 'reglages') bindReglages();
   if (p === 'demander') bindDemander(arg);
   if (p === 'habilitations') bindHabil(arg);
+  if (p === 'valeur-locative') bindValeurLocative(arg);
   if (p === 'synthese') { const b = $('#printBtn'); if (b) b.onclick = () => window.print(); }
   $$('[data-exp]').forEach((b) => b.onclick = () => doExport(b.dataset.exp, b));
 }
@@ -1149,18 +1351,21 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg && msg.type === 'ac:dataChanged') { load().then(render); return; }
   if (msg && msg.type === 'ac:claudeReponse') { load().then(render); return; }
   if (msg && msg.type === 'ac:habilStep') { A.habRun = msg.error ? '' : msg.text; const e = $('#habStep'); if (e) e.textContent = msg.error ? '' : msg.text; if (msg.error) { toast('Habilitations : ' + msg.error); const g = $('#habGo'); if (g) g.disabled = false; } return; }
-  if (msg && msg.type === 'ac:habilDone') { A.habRun = ''; load().then(() => { render(); toast(`Habilitations lues : ${plural(msg.n, 'ligne')}`); }); return; }
+  if (msg && msg.type === 'ac:habilDone') { A.habRun = ''; load().then(() => { render(); toast(`Habilitations lues : ${plural(msg.n, 'ligne')}${(msg.echecs || []).length ? ' · noms des dossiers non lus : ' + msg.echecs[0] : ''}`); }); return; }
   if (msg && msg.type === 'ac:state' && msg.run && msg.run.running) {
     A.run = msg.run;
-    const f = $('#fresh'); if (f) f.innerHTML = `${IC.refresh} Mise à jour en cours · ${msg.run.done}/${msg.run.total || '…'} dossiers`;
+    const f = $('#fresh'); if (f) f.innerHTML = `${IC.refresh} Mise à jour en cours · ${Math.min(msg.run.total || 0, (msg.run.dejaLus || 0) + (msg.run.faits || 0))}/${msg.run.total || '…'} dossiers${msg.run.eta ? ' · encore ' + dur(msg.run.eta).replace('environ ', '~') : ''}`;
+    majRunBlock();
     const tranquille = $('#modal').hidden && !A.sel.size && !document.activeElement.matches('textarea, input[type=text], input[type=email], input:not([type])');
     if (tranquille && Date.now() - liveT > 5000 && ['a-traiter', 'clients', ''].includes(route().p)) { liveT = Date.now(); const y = window.scrollY, avant = new Set(A.c.taches.map((t) => t.id)); load().then(() => { render(); window.scrollTo(0, y); $$('.item').forEach((r) => { if (!avant.has(r.dataset.id)) r.classList.add('new'); }); }); }
     return;
   }
-  if (msg && msg.type === 'ac:state' && msg.run && !msg.run.running) { const was = A.run && A.run.running; A.run = msg.run; if (was) shell(); }
+  if (msg && msg.type === 'ac:state' && msg.run && !msg.run.running) { const was = A.run && A.run.running; A.run = msg.run; if (was) { shell(); majRunBlock(); } }
+  if (msg && msg.type === 'ac:state' && msg.run && !msg.run.running && msg.run.error && A.majClient) { const s = A.majClient; A.majClient = ''; toast('Actualisation impossible : ' + msg.run.error); if (route().p === 'client') page(); }
   if (msg && msg.type === 'ac:state' && msg.run && !msg.run.running && msg.run.last && msg.run.last.at !== A.lastRun) {
-    A.lastRun = msg.run.last.at;
-    load().then(() => { render(); toast('Mise à jour terminée : la liste de travail est à jour'); });
+    A.lastRun = msg.run.last.at; const L = msg.run.last;
+    if (L.unique) { A.majClient = ''; const y = window.scrollY; load().then(() => { render(); window.scrollTo(0, y); const st = L.stats || {}; toast(`Client actualisé en ${Math.max(1, L.duree || 0)} s${st.nouveaux ? ' · ' + plural(st.nouveaux, 'nouvel avis', 'nouveaux avis') : ''}${st.erreurs ? ' · ' + plural(st.erreurs, 'page non lue', 'pages non lues') : ''}`); }); }
+    else load().then(() => { render(); toast('Mise à jour terminée : la liste de travail est à jour'); });
   }
 });
 let lastFocusLoad = Date.now();
@@ -1176,6 +1381,6 @@ chrome.runtime.sendMessage({ type: 'ac:getState' }).then((r) => { A.run = r && r
 ACUP.check().then((u) => {
   if (!u.available) return;
   const b = document.createElement('div'); b.className = 'updbar';
-  b.innerHTML = `<b>Nouvelle version ${esc(u.version)} disponible</b>${u.notes ? `<span>${esc(u.notes)}</span>` : ''}<a href="${esc(u.zip)}" target="_blank">Télécharger</a><a href="${esc(u.guide)}" target="_blank">Comment mettre à jour (1 min)</a>`;
+  b.innerHTML = `<b>Nouvelle version ${esc(u.version)} disponible</b>${u.notes ? `<span>${esc(u.notes)}</span>` : ''}<span class="small">Vos données sont conservées : remplacez les fichiers, ne supprimez pas l’extension.</span><a href="${esc(u.zip)}" target="_blank">Télécharger</a><a href="${esc(u.guide)}" target="_blank">Comment mettre à jour (1 min)</a>`;
   $('.main').prepend(b);
 });

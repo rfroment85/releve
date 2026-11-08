@@ -31,8 +31,13 @@ async function fetchText(url, opts = {}) {
 }
 
 // Jeton anti-CSRF : injecté dans les liens par le JS de la page « Mes services » : injectTokens("token", "XXXX-....", [...])
+// Compte impots.gouv connecté (n° d'abonné de l'espace professionnel) : lu sur « Mes services », sert à tagger les données de chaque espace
+let ABONNE = '';
+const abonneDe = (h) => ((h.replace(/<[^>]+>/g, ' ').match(/N°\s*d.abonn[ée]\s*:?\s*([0-9]{6,})/i)) || [])[1] || '';
+const abonneCourant = () => ABONNE;
 async function getToken() {
   const h = await fetchText(BASE + '/mire/accueil.do');
+  ABONNE = abonneDe(h) || ABONNE;
   if (!/idth=consulter\.avis\.cfe/.test(h)) throw new Error('Service « Avis CFE » introuvable dans le menu (droits insuffisants ?)');
   const m = h.match(/injectTokens\(\s*"token"\s*,\s*"([\w-]+)"/) || h.match(/[?&](?:amp;)?token=([\w-]{8,})/);
   if (!m) throw new Error('Jeton de session introuvable sur la page « Mes services »');
@@ -40,14 +45,36 @@ async function getToken() {
 }
 
 // Liste de tous les dossiers rattachés au service Avis CFE (pagination 10 par page)
-async function listDossiers(token, onProgress, idth = 'consulter.avis.cfe') {
+const extractDossiers = (h) => [...parseHTML(h).querySelectorAll('a[href*="dossierSelect.do"]')]
+  .map((a) => ({ siren: (a.getAttribute('href').match(/idDossier=(\w+)/) || [])[1], nom: a.textContent.trim() }))
+  .filter((d) => d.siren);
+// Première page de la liste : sert aussi à vérifier qu'une liste gardée en mémoire correspond bien à l'espace connecté
+async function premierePageDossiers(token, idth = 'consulter.avis.cfe') {
   const first = await fetchText(`${BASE}/mire/afficherSelectionDossier.do?idth=${encodeURIComponent(idth)}&p=1&token=${token}`);
   const mPages = first.replace(/&nbsp;|\u00a0/g, ' ').match(/Page\s+1\s+sur\s+(\d+)/);
-  const nPages = mPages ? parseInt(mPages[1], 10) : 1;
-  const nTotal = parseInt((first.match(/(\d+)<\/span>\s*(?:&nbsp;|\s)*résultat/) || [])[1] || '0', 10);
-  const extract = (h) => [...parseHTML(h).querySelectorAll('a[href*="dossierSelect.do"]')]
-    .map((a) => ({ siren: (a.getAttribute('href').match(/idDossier=(\w+)/) || [])[1], nom: a.textContent.trim() }))
-    .filter((d) => d.siren);
+  return { first, nPages: mPages ? parseInt(mPages[1], 10) : 1, nTotal: parseInt((first.match(/(\d+)<\/span>\s*(?:&nbsp;|\s)*résultat/) || [])[1] || '0', 10), dossiers: extractDossiers(first) };
+}
+// Liste gardée en mémoire encore valable ? (même espace : mêmes dossiers en tête de liste, même nombre annoncé)
+async function listeToujoursValable(token, liste) {
+  const pp = await premierePageDossiers(token);
+  if (!pp.dossiers.length) return false;
+  const connus = new Set(liste.map((d) => d.siren));
+  if (pp.dossiers.some((d) => !connus.has(d.siren))) return false;
+  return !pp.nTotal || pp.nTotal === liste.length;
+}
+// Espace sans liste de dossiers (espace professionnel d'une entreprise ouvert avec ses propres codes) : le dossier est celui affiché
+async function dossierDeLEspace() {
+  const doc = parseHTML(await fetchText(AVIS_URL));
+  const txt = doc.body ? doc.body.textContent.replace(/\s+/g, ' ') : '';
+  const siren = (txt.match(/SIREN ou IDSP\s*:?\s*(\d{9})/) || [])[1];
+  if (!siren) return null;
+  const nom = ((txt.match(/(?:Dénomination|Raison sociale)\s*:?\s*(.{3,80}?)\s*(?:SIREN|Adresse|N°|$)/) || [])[1] || '').trim();
+  return { siren, nom, mono: true };
+}
+
+async function listDossiers(token, onProgress, idth = 'consulter.avis.cfe') {
+  const { first, nPages, nTotal } = await premierePageDossiers(token, idth);
+  const extract = extractDossiers;
   const all = extract(first);
   // Pages lues 4 par 4 (la liste ne dépend pas du dossier sélectionné)
   for (let p = 2; p <= nPages; p += 4) {
@@ -169,6 +196,46 @@ async function getDettes() {
   return { rows, total };
 }
 
+// Synthèse des paiements d'impôts locaux du dossier courant (Compte fiscal › Synthèses › Paiements impôts locaux) :
+// pour chaque règlement, impôt, commune, NIC, date et montant payés, nature du paiement, période et référence de la dette.
+// Lecture seule : la page, puis le même formulaire avec le filtre impôt / année (requête ajax du site). Aucune étape de paiement.
+const PAIEMENTS_URL = BASE + '/adelie2mapi/xhtml/syntheses/synthese_impots_locaux.xhtml?emetteur=ADELIE_2';
+const jsfViewState = (h) => (h.match(/name="javax\.faces\.ViewState"[^>]*value="([^"]+)"/) || h.match(/value="([^"]+)"[^>]*name="javax\.faces\.ViewState"/) || h.match(/<update id="[^"]*ViewState[^"]*"><!\[CDATA\[([^\]]+)\]\]>/) || [])[1];
+function paiementsLignes(doc) {
+  return [...doc.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((x) => x.textContent.trim().replace(/\s+/g, ' ')))
+    .filter((td) => td.length >= 12 && /^(CFE|TF)$/i.test(td[0]))
+    .map((td) => ({ impot: td[0].toUpperCase(), anneePaiement: td[1], departement: td[2], commune: td[3], nic: td[4], datePaiement: td[5], dateLimite: td[6], montant: td[7], nature: td[8], periode: td[9], reference: td[10], natureDette: td[11] }));
+}
+async function getPaiements(annee, siren, impots = ['CFE', 'TF']) {
+  const h = await fetchText(PAIEMENTS_URL);
+  if (!/tableau-synthese-paiement/.test(h)) throw new Error('page « Paiements impôts locaux » non reconnue');
+  const sAff = (h.replace(/<[^>]+>/g, ' ').match(/SIREN ou IDSP\s*:?\s*(\d{9})/) || [])[1];
+  if (siren && sAff && sAff !== siren) throw new Error('Dossier courant inattendu (' + sAff + ')');
+  let vs = jsfViewState(h);
+  const doc0 = parseHTML(h);
+  let impot = ((doc0.querySelector('#editForm\\:selecteurImpot_input') || {}).value || 'CFE').toUpperCase();
+  let an = String((doc0.querySelector('#editForm\\:selecteurAnnee_input') || {}).value || '');
+  const rows = [], lus = new Set();
+  const retenir = (lignes) => { for (const r of lignes) if (!rows.some((x) => x.impot === r.impot && x.reference === r.reference && x.datePaiement === r.datePaiement && x.montant === r.montant && x.nic === r.nic)) rows.push(r); };
+  // Même requête que le site quand on change un sélecteur (PrimeFaces, rendu partiel du formulaire)
+  const choisir = async (champ, valeur) => {
+    const id = 'editForm:' + champ;
+    const body = new URLSearchParams({ 'javax.faces.partial.ajax': 'true', 'javax.faces.source': id, 'javax.faces.partial.execute': id, 'javax.faces.partial.render': 'editForm', 'javax.faces.behavior.event': 'valueChange', 'javax.faces.partial.event': 'change', [id + '_focus']: '', [id + '_input']: valeur, [id + '_editableInput']: valeur, 'javax.faces.ViewState': vs });
+    const x = await fetchText(PAIEMENTS_URL, { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Faces-Request': 'partial/ajax', 'X-Requested-With': 'XMLHttpRequest' } });
+    vs = jsfViewState(x) || vs;
+    const html = (x.match(/<update id="editForm"><!\[CDATA\[([\s\S]*?)\]\]><\/update>/) || [])[1];
+    if (!html) throw new Error('filtre « Paiements impôts locaux » refusé');
+    return parseHTML(html);
+  };
+  if (an !== String(annee)) { const d = await choisir('selecteurAnnee', String(annee)); an = String(annee); if (impots.includes(impot)) { retenir(paiementsLignes(d)); lus.add(impot); } }
+  else if (impots.includes(impot)) { retenir(paiementsLignes(doc0)); lus.add(impot); }
+  for (const imp of impots) {
+    if (lus.has(imp)) continue;
+    retenir(paiementsLignes(await choisir('selecteurImpot', imp))); lus.add(imp); impot = imp;
+  }
+  return { rows, annee: String(annee) };
+}
+
 // Avis de mise en recouvrement à payer (rubrique « Payer › Dette fiscale ») : pénalités, rappels… absents de la synthèse des dettes.
 // Lecture seule : on n'affiche que la page d'accueil du service (liste des documents à payer), jamais une étape de paiement.
 async function getAmr(token, siren) {
@@ -203,61 +270,8 @@ async function getAmr(token, siren) {
   throw new Error('jeton de session refusé');
 }
 
-// ======================================================================
-// 2. Lecture du PDF (sans bibliothèque : flux FlateDecode décompressés nativement, texte des opérateurs Tj/TJ)
-// ======================================================================
-async function inflate(u8) {
-  try { const ds = new DecompressionStream('deflate'); const w = ds.writable.getWriter(); w.write(u8); w.close(); return new Uint8Array(await new Response(ds.readable).arrayBuffer()); } catch { return null; }
-}
-// Largeurs Helvetica (AFM, millièmes d'em) : servent à détecter les espaces entre lettres positionnées une à une
-const HW = { ' ': 278, '!': 278, '"': 355, '#': 556, '$': 556, '%': 889, '&': 667, "'": 222, '(': 333, ')': 333, '*': 389, '+': 584, ',': 278, '-': 333, '.': 278, '/': 278, ':': 278, ';': 278, '<': 584, '=': 584, '>': 584, '?': 556, '@': 1015,
-  A: 667, B: 667, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278, J: 500, K: 667, L: 556, M: 833, N: 722, O: 778, P: 667, Q: 778, R: 722, S: 667, T: 611, U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
-  '[': 278, '\\': 278, ']': 278, '^': 469, _: 556, '`': 222, a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222, j: 222, k: 500, l: 222, m: 833, n: 556, o: 556, p: 556, q: 556, r: 333, s: 500, t: 278, u: 556, v: 500, w: 722, x: 500, y: 500, z: 500, '{': 334, '|': 260, '}': 334, '~': 584, '°': 400, '€': 556, '«': 556, '»': 556 };
-const glyphW = (ch) => { if (/\d/.test(ch)) return 556; const b = ch.normalize('NFD')[0]; return HW[b] ?? 556; };
-const textW = (t, size) => [...t].reduce((a, c) => a + glyphW(c), 0) * size / 1000;
-const decPdf = (t) => t.replace(/\\([()\\])/g, '$1').replace(/\\(\d{3})/g, (a, b) => String.fromCharCode(parseInt(b, 8))).replace(/\\[nrt]/g, ' ');
-// Reconstitue le texte d'un flux de contenu : lettres positionnées une à une (Td) recollées, espace inséré quand l'écart dépasse l'avance du glyphe
-function layoutText(content) {
-  let size = 10, x = 0, out = '';
-  const re = /\/[\w.-]+\s+(-?[\d.]+)\s+Tf|(-?[\d.]+)\s+(-?[\d.]+)\s+T[dD]|T\*|BT|ET|(?:-?[\d.]+\s+){6}Tm|\[((?:[^\]\\]|\\.)*)\]\s*TJ|\(((?:[^)\\]|\\.)*)\)\s*(?:Tj|'|")/g;
-  let m;
-  while ((m = re.exec(content))) {
-    if (m[1] !== undefined) { size = parseFloat(m[1]) || size; continue; }
-    if (m[2] !== undefined) {
-      const dx = parseFloat(m[2]), dy = parseFloat(m[3]);
-      if (Math.abs(dy) > 0.01) { out += '\n'; } else if (dx - x > 0.15 * size || dx < 0) { out += ' '; }
-      x = 0; continue;
-    }
-    if (m[4] !== undefined) {
-      for (const p of m[4].match(/\(((?:[^)\\]|\\.)*)\)|-?[\d.]+/g) || []) {
-        if (p[0] === '(') { const t = decPdf(p.slice(1, -1)); out += t; x += textW(t, size); }
-        else { const k = parseFloat(p); if (k < -150) out += ' '; x -= k / 1000 * size; }
-      }
-      continue;
-    }
-    if (m[5] !== undefined) { const t = decPdf(m[5]); out += t; x += textW(t, size); continue; }
-    out += '\n'; x = 0; // T*, BT, ET, Tm
-  }
-  return out;
-}
-async function pdfText(bytes) {
-  const s = new TextDecoder('latin1').decode(bytes);
-  const parts = []; const re = /(?<!end)stream\r?\n/g; let m;
-  while ((m = re.exec(s))) {
-    const start = m.index + m[0].length; const end = s.indexOf('endstream', start); if (end < 0) break;
-    const head = s.slice(Math.max(0, m.index - 300), m.index);
-    if (/\/Subtype\s*\/Image|FontFile|\/Length1/.test(head)) { re.lastIndex = end + 9; continue; }
-    // Longueur exacte du flux si déclarée ("/Length 1540", pas "/Length1"), sinon on retire la fin de ligne avant "endstream"
-    const lm = head.match(/\/Length\s+(\d+)(?!\d)(?!\s+\d+\s+R)/);
-    let e = end; while (e > start && (s[e - 1] === '\n' || s[e - 1] === '\r')) e--;
-    const candidates = lm ? [start + parseInt(lm[1], 10), e, end] : [e, end];
-    let inf = null;
-    for (const c of candidates) { const u8 = bytes.slice(start, Math.min(c, end)); inf = /FlateDecode/.test(head) ? await inflate(u8) : u8; if (inf) break; }
-    if (inf) { const t = new TextDecoder('windows-1252').decode(inf); if (/\b(Tj|TJ)\b/.test(t)) parts.push(t); }
-    re.lastIndex = end + 9;
-  }
-  return parts.map(layoutText).join('\n').replace(/\u0080/g, '€').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
-}
+// Lecture du PDF : lib/pdftext.js (ACPDF), partagée avec l'application
+const pdfText = (bytes) => ACPDF.pdfText(bytes);
 const numVal = (s) => parseFloat(String(s || '').replace(/[\s\u00a0]/g, '').replace(',', '.')) || 0;
 const fmtEur = (n) => (Math.round(n * 100) / 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // Extrait les informations de l'avis de CFE et les confronte à la ligne du tableau du site
@@ -385,7 +399,8 @@ function parseTfDetail(txt) {
     const { taux } = tfTaux(nb[3], 14), rows = tfRows(nb[4], 7, [0]);
     noms.forEach((nom, k) => { const tN1 = taux[2 * k] || '', tN = taux[2 * k + 1] || '', c = rows[k] || {}; if ((tN1 || tN) && c.cotN) lignes.push({ nom: nom + ' (non bâti)', tauxN1: tN1, tauxN: tN, cotN1: c.cotN1 || '', cotN: c.cotN || '', variation: c.var || '' }); });
   }
-  return bati || nb ? { anneeN1, anneeN, lignes } : null;
+  const locaux = ACTF.locaux(txt);
+  return bati || nb || locaux.length ? { anneeN1, anneeN, lignes, locaux, entete: ACTF.enTete(txt) } : null;
 }
 // Explique une variation N-1 → N à partir du détail des avis (taux vs bases)
 function expliquer(taxe, infosN, infosN1, mN, mN1) {
@@ -457,14 +472,92 @@ async function getHabilitations(token, onStep) {
     return habLignes(x);
   };
   const cle = (l) => l[0] + '|' + l[1];
-  const role = {}, etat = {};
+  const compte = (lignes) => { const m = new Map(); for (const l of lignes) { const k = cle(l); m.set(k, (m.get(k) || 0) + 1); } return m; };
+  const role = {};
   for (const r of Object.keys(HAB_ROLES)) { onStep?.(`Rôles : ${HAB_ROLES[r]}…`); for (const l of await filtrer(r, null)) role[cle(l)] = r; }
-  for (const e of Object.keys(HAB_ETATS)) { onStep?.(`États : ${HAB_ETATS[e]}…`); for (const l of await filtrer(null, e)) etat[cle(l)] = e; }
+  const nVeille = new Map(), nSupp = new Map();
+  for (const e of Object.keys(HAB_ETATS)) { onStep?.(`États : ${HAB_ETATS[e]}…`); const m = compte(await filtrer(null, e)); for (const [k, n] of m) (e === 'hab2' ? nVeille : nSupp).set(k, n); }
   await filtrer(null, null); // remet la page sans filtre, comme on l'a trouvée
-  // Noms des entreprises : liste des dossiers du service « Compte fiscal » (la page des habilitations ne donne que le SIREN)
-  let noms = {};
-  try { onStep?.('Noms des dossiers…'); noms = Object.fromEntries((await listDossiers(token, null, 'consulter.adelie.le_compte_fiscal')).map((d) => [d.siren, d.nom])); } catch {}
-  const vus = new Set(), rows = [];
-  for (const l of tous) { const k = cle(l); if (vus.has(k)) continue; vus.add(k); rows.push({ siren: l[0], service: l[1], role: role[k] || '', etat: etat[k] === 'hab3' ? 'Supprimé' : etat[k] === 'hab2' ? 'En veille' : 'Actif' }); }
-  return { at: Date.now(), abonne, rows, noms };
+  // Noms des entreprises : la page des habilitations ne donne que le SIREN ; on les prend dans la liste des dossiers
+  // du service « Compte fiscal », puis « Avis CFE », puis « Taxe foncière » (un compte n'a pas forcément tous ces services)
+  let noms = {}; const echecs = [];
+  for (const [idth, lib] of [['consulter.adelie.le_compte_fiscal', 'Compte fiscal'], ['consulter.avis.cfe', 'Avis CFE'], ['consulter.avis.tf', 'Taxe foncière']]) {
+    if (Object.keys(noms).length) break;
+    try { onStep?.(`Noms des dossiers (${lib})…`); noms = Object.fromEntries((await listDossiers(token, null, idth)).map((d) => [d.siren, d.nom])); } catch (e) { echecs.push(`${lib} : ${e.message}`); }
+  }
+  // Un couple dossier + service est actif dès qu'une de ses lignes l'est ; « en veille » ou « supprimé » seulement si toutes le sont
+  const total = compte(tous), vus = new Set(), rows = [];
+  for (const l of tous) {
+    const k = cle(l); if (vus.has(k)) continue; vus.add(k);
+    const n = total.get(k) || 1, v = nVeille.get(k) || 0, su = nSupp.get(k) || 0, actives = Math.max(0, n - v - su);
+    rows.push({ siren: l[0], service: l[1], role: role[k] || '', etat: actives > 0 ? 'Actif' : v > 0 ? 'En veille' : 'Supprimé', detail: n > 1 ? { total: n, actives, veille: v, supprimees: su } : undefined });
+  }
+  return { at: Date.now(), abonne, rows, noms, echecs };
+}
+
+// ======================================================================
+// Biens immobiliers du dossier sélectionné (« Gérer mes biens immobiliers »)
+// Lecture seule : la liste des biens, puis la fiche « Consulter un bien » de chaque local professionnel. Aucune déclaration n'est ouverte.
+// ======================================================================
+const GMBI_IDTH = 'demarches.gmbi.biensimmo';
+const GMBI_CHAMPS = {
+  'Numéro fiscal du local': 'invariant', 'Nature de local': 'nature', 'N° et rue': 'adresse', 'Département': 'departement', 'Ville': 'ville', 'Numéro de lot dans la copropriété': 'lot', 'Bâtiment': 'batiment',
+  'Entrée (ou escalier)': 'entree', 'Niveau': 'niveau', 'Porte': 'porte', 'Références cadastrales de la parcelle': 'parcelle', 'Catégorie': 'categorieLibelle', 'Nature': 'droit',
+  'Surface des parties principales': 'p1', 'Surface des parties secondaires couvertes': 'p2c', 'Surface des parties secondaires non couvertes': 'p2nc',
+  'Surface des espaces de stationnement couverts (parkings couverts)': 'pk1', 'Surface des espaces de stationnement non couverts (parkings non couverts)': 'pk2',
+};
+const gmbiNum = (v) => { const m = String(v || '').replace(/\s/g, '').match(/([\d.,]+)m/); return m ? parseFloat(m[1].replace(',', '.')) : 0; };
+function gmbiFiche(h) {
+  const doc = parseHTML(h), rec = { surfaces: {} };
+  for (const dl of doc.querySelectorAll('dl.dl-recapitulatif')) {
+    const dts = [...dl.querySelectorAll('dt')], dds = [...dl.querySelectorAll('dd')];
+    dts.forEach((dt, i) => {
+      const lib = (dt.childNodes[0] ? dt.childNodes[0].textContent : dt.textContent).trim().replace(/\s+/g, ' '), val = ((dds[i] && dds[i].textContent) || '').trim().replace(/\s+/g, ' ');
+      const k = GMBI_CHAMPS[lib]; if (!k) return;
+      if (['p1', 'p2c', 'p2nc', 'pk1', 'pk2'].includes(k)) rec.surfaces[k] = gmbiNum(val); else rec[k] = val;
+    });
+  }
+  const m = String(rec.parcelle || '').match(/^(\d{3})\s+([0-9A-Z]{1,2})\s+(\d{1,4})$/);
+  if (m) { rec.prefixe = m[1] === '000' ? '' : m[1]; rec.section = m[2]; rec.numParcelle = String(parseInt(m[3], 10)); }
+  return rec;
+}
+// Liste des biens du dossier courant, puis fiche de chaque local professionnel (environ 0,1 s par fiche). Renvoie { siren, biens, attendues, indispo }.
+async function getBiens(token, onStep, pause = 60) {
+  const r = await safeFetch(`${BASE}/mire/redirection.do?idth=${GMBI_IDTH}&token=${encodeURIComponent(token)}`);
+  if (/erreurCsrf/.test(r.url) || r.status >= 500) throw new Error('CSRF : jeton de session refusé (HTTP ' + r.status + ')');
+  const h = await r.text();
+  if (/Authentification des professionnels/.test(h) && /Mot de passe/.test(h)) throw new Error('Session expirée : reconnectez-vous à l’espace professionnel');
+  const doc = parseHTML(h);
+  const siren = (doc.body.textContent.match(/SIREN\s*:?\s*(\d{9})/) || [])[1] || '';
+  if (!doc.querySelector('#liste-biens')) {
+    const msg = doc.body.textContent.replace(/\s+/g, ' ').match(/(?:n.est pas (?:disponible|habilité|accessible)[^.]{0,120}|aucun (?:service|droit)[^.]{0,120}|(?:habilitation|délégation)[^.]{0,120})/i);
+    return { siren, biens: [], attendues: [], indispo: msg ? msg[0].trim() : 'service « Biens immobiliers » indisponible pour ce dossier (pas de délégation ?)' };
+  }
+  const biens = [], attendues = [], pro = [];
+  for (const c of doc.querySelectorAll('.carte-bien')) {
+    const type = ((c.querySelector('.type-bien') || {}).textContent || '').trim().replace(/\s+/g, ' ');
+    const adresse = ((c.querySelector('.adresse') || {}).textContent || '').trim().replace(/\s+/g, ' ');
+    const ville = ((c.querySelector('.ville') || {}).textContent || '').replace(/\s+/g, ' ').replace(/\u00a0/g, ' ').trim();
+    const bulle = ((c.querySelector('.bulle') || {}).textContent || '').trim();
+    const inv = (c.querySelector('input[name="invariant"]') || {}).value || '';
+    const details = Object.fromEntries([...c.querySelectorAll('li')].map((li) => [li.childNodes[0].textContent.trim().replace(/\s+/g, ' '), ((li.querySelector('span') || {}).textContent || '').trim()]));
+    if (!type && /^(DP|PC|PA|DA|DT)\s?\d/.test(bulle)) { attendues.push({ numero: bulle, adresse, ville }); continue; }
+    const b = { invariant: inv, type, adresse, ville, surface: gmbiNum(bulle), niveau: details['Niveau'] || '', lot: details['Lot de copropriété n°'] || '', pro: /professionnel/i.test(type) };
+    biens.push(b);
+    if (b.pro) pro.push({ b, form: c.querySelector('form') });
+  }
+  let n = 0;
+  for (const { b, form } of pro) {
+    if (!form) continue;
+    onStep?.(++n, pro.length);
+    const action = new URL(form.getAttribute('action').replace(/&amp;/g, '&'), BASE).href;
+    const body = new URLSearchParams(); for (const i of form.querySelectorAll('input')) body.set(i.name, i.value); body.set('_eventId_jeconsulteunbien', '');
+    try {
+      const x = await fetchText(action, { method: 'POST', body: body.toString(), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (!/Consulter un bien/.test(x)) throw new Error('fiche non reconnue');
+      b.fiche = gmbiFiche(x);
+    } catch (e) { b.erreur = e.message; }
+    if (pause) await sleep(pause);
+  }
+  return { siren, biens, attendues, indispo: '' };
 }

@@ -64,6 +64,18 @@ async function check() {
     }
   } finally { V.checking = false; }
   render();
+  // Session expirée pendant une mise à jour, utilisateur reconnecté : la mise à jour repart d'elle-même (une seule fois par interruption)
+  if (V.run && !V.run.running && V.run.session && V.run.opts && V.page && !V.page.login && !V.page.expired && V.reprisePour !== V.run.startedAt) {
+    V.reprisePour = V.run.startedAt; toast('Reconnecté : la mise à jour reprend');
+    reprendre(V.run.opts);
+  }
+}
+async function reprendre(opts) {
+  if (!V.tab) return;
+  const page = await ping(); if (!page || page.login || page.expired || page.running) return;
+  await chrome.runtime.sendMessage({ type: 'ac:started', opts });
+  await toTab({ type: 'ac:start', opts });
+  V.showDone = true;
 }
 
 // ---- Vues ----
@@ -75,14 +87,20 @@ function statusPills() {
 function summaryBlock(c) {
   const annee = c.annee, open = c.taches.filter((t) => !t.done && !t.snoozed);
   if (!c.avis.length) return '';
-  const last = V.data.runs[0];
-  const neuf = last ? c.avis.filter((a) => a.firstSeenAt && a.firstSeenAt >= (V.data.runs[1]?.at || 0) && a.firstSeenAt <= last.at + 1000).length : 0;
+  const runsG = V.data.runs.filter((r) => !r.unique), last = runsG[0];
+  const neuf = last ? c.avis.filter((a) => a.firstSeenAt && a.firstSeenAt >= (runsG[1]?.at || 0) && a.firstSeenAt <= last.at + 1000).length : 0;
   const tfN = c.N.filter((a) => a.taxe === 'TF'), acN = c.N.filter((a) => a.taxe === 'CFE' && a.acompte), cfeN = c.N.filter((a) => a.taxe === 'CFE' && !a.acompte);
   const doss = (arr) => new Set(arr.map((a) => a.siren)).size;
-  const row = (t, s, pill) => `<div class="row"><div class="grow"><div class="t">${t}</div><div class="s">${s}</div></div>${pill}</div>`;
+  const row = (t, s, pill, go) => `<div class="row${go ? ' go' : ''}"${go ? ` data-go="${go}"` : ''}><div class="grow"><div class="t">${t}</div><div class="s">${s}</div></div>${pill}</div>`;
+  // Valeur locative des locaux professionnels : résumé écrit en fin de mise à jour (et par l'application)
+  const scopeSet = scopeMode() === 'moi' ? new Set(scopeSirens()) : null;
+  const vlr = ((V.data.vlResume && V.data.vlResume.locaux) || []).filter((l) => !scopeSet || scopeSet.has(l.siren));
+  const trop = vlr.filter((l) => l.statut === 'TROP'), piste = vlr.filter((l) => l.statut === 'PISTE'), enjeu = trop.reduce((x, l) => x + (l.enjeu || 0), 0);
+  const vlRow = V.settings.biens === false ? '' : row('Valeur locative des locaux pros', vlr.length ? `${plural(vlr.length, 'local contrôlé', 'locaux contrôlés')} au tarif officiel${trop.length ? ` · ${plural(trop.length, 'réclamation à préparer', 'réclamations à préparer')}` : piste.length ? ` · ${plural(piste.length, 'écart à creuser', 'écarts à creuser')}` : ''}` : 'Lue à la prochaine mise à jour', trop.length ? `<span class="pill bad">≈ ${Math.round(enjeu).toLocaleString('fr-FR')} €/an de trop</span>` : piste.length ? '<span class="pill warn">À creuser</span>' : vlr.length ? '<span class="pill ok">Rien à signaler</span>' : '<span class="pill">—</span>', 'valeur-locative');
   return `<div class="card rows">
     ${row(`Taxe foncière ${annee}`, `${plural(doss(tfN), 'dossier')} · ${plural(tfN.length, 'avis', 'avis')}`, tfN.length ? '<span class="pill ok">Disponible</span>' : '<span class="pill">Aucun avis</span>')}
     ${row(`CFE ${annee} · acomptes`, acN.length ? `${plural(doss(acN), 'dossier')}` : 'Aucun acompte', acN.length ? '<span class="pill ok">À jour</span>' : '<span class="pill">—</span>')}
+    ${vlRow}
     ${row(`CFE ${annee} · soldes`, cfeN.length ? `${plural(doss(cfeN), 'dossier')} · ${plural(cfeN.length, 'avis', 'avis')}` : `Mise en ligne attendue début novembre${c.aVenir.length ? ` · ${plural(c.aVenir.length, 'montant')} déjà connu${c.aVenir.length > 1 ? 's' : ''}` : ''}`, cfeN.length ? '<span class="pill ok">Disponible</span>' : '<span class="pill warn">Attendue</span>')}
   </div>
   ${open.length ? `<button class="btn" id="goList">${IC.list} ${plural(open.length, 'action')} dans ma liste de travail</button>` : ''}
@@ -109,7 +127,7 @@ function viewReady(c) {
   <button class="btn primary big" id="go">${IC.refresh} Mettre à jour mes clients</button>
   <div class="cta-note">${n ? `${estimate(n)[0].toUpperCase() + estimate(n).slice(1)} pour ${plural(n, 'dossier')}. ` : ''}Vous pouvez travailler dans un autre onglet pendant ce temps.</div>
   ${first ? '' : '<div class="cta-note tiny">Mise à jour rapide : seules les pages susceptibles d’avoir changé sont relues. <a href="#" id="goFull">Tout relire</a></div>'}
-  ${V.run && V.run.error ? `<div class="errbox">La dernière mise à jour s’est arrêtée : ${esc(V.run.error)}${/Session/.test(V.run.error) ? '. Reconnectez-vous puis relancez : les avis déjà lus ne seront pas relus.' : ''}</div>` : ''}`;
+  ${V.run && V.run.error ? `<div class="errbox">La dernière mise à jour s’est arrêtée : ${esc(V.run.error)}${V.run.session ? '. Dès que vous êtes reconnecté dans l’onglet impots.gouv, elle repart d’elle-même là où elle s’est arrêtée.' : /Réseau/.test(V.run.error) ? '' : '. Relancez : les dossiers déjà lus ne seront pas relus.'}</div>` : ''}`;
 }
 
 function viewNoTab(c) {
@@ -127,22 +145,24 @@ function viewLogin(c) {
   return `${statusPills()}
   <div class="card hero">
     <h2>Connectez-vous à votre espace professionnel</h2>
-    <p>${V.page && V.page.expired ? 'Votre session impots.gouv a expiré.' : 'L’onglet impots.gouv est ouvert mais la session n’est pas active.'} Connectez-vous dans l’onglet impots.gouv, ce volet se met à jour tout seul.</p>
+    <p>${V.page && V.page.expired ? 'Votre session impots.gouv a expiré.' : 'L’onglet impots.gouv est ouvert mais la session n’est pas active.'} Connectez-vous dans l’onglet impots.gouv, ce volet se met à jour tout seul.${V.run && V.run.session && V.run.opts ? ' <b>La mise à jour interrompue reprendra automatiquement</b> là où elle s’est arrêtée.' : ''}</p>
   </div>
   <button class="btn big" id="showTab">${IC.ext} Aller sur l’onglet impots.gouv</button>
   ${summaryBlock(c)}`;
 }
 
 function viewRunning() {
-  const r = V.run, pct = r.total ? Math.round(r.done / r.total * 100) : 0;
-  const head = r.phase === 'liste' ? 'Lecture de la liste des dossiers' : `${r.done.toLocaleString('fr-FR')} / ${r.total.toLocaleString('fr-FR')} dossiers`;
+  const r = V.run, deja = r.dejaLus || 0, faits = r.faits || 0, aFaire = r.aFaire || 0, avance = Math.min(r.total || 0, deja + faits);
+  const pct = r.total ? Math.round(avance / r.total * 100) : 0;
+  const head = r.phase === 'liste' ? 'Lecture de la liste des dossiers' : r.phase === 'attente' ? 'Connexion interrompue' : `${avance.toLocaleString('fr-FR')} / ${(r.total || 0).toLocaleString('fr-FR')} dossiers`;
   return `${statusPills()}
   <div class="card prog">
-    <div class="small muted">Mise à jour en cours</div>
+    <div class="small muted">${r.phase === 'attente' ? 'Mise à jour en attente du réseau' : 'Mise à jour en cours'}</div>
     <div class="big num">${head}</div>
     <div class="bar"><i style="width:${r.phase === 'liste' ? (r.total ? r.done / r.total * 100 : 5) : pct}%"></i></div>
     <div class="lbl">${esc(r.label || '')}</div>
-    <div class="small muted" style="margin-top:6px">${r.eta ? `Encore ${dur(r.eta)} · ` : ''}${plural(r.nouveaux || 0, 'nouvel avis', 'nouveaux avis')} · vous pouvez fermer ce volet</div>
+    ${deja ? `<div class="small" style="margin-top:6px"><span class="pill ok">Reprise</span> ${deja.toLocaleString('fr-FR')} dossier${deja > 1 ? 's' : ''} déjà à jour, non relu${deja > 1 ? 's' : ''} · ${aFaire.toLocaleString('fr-FR')} à lire</div>` : ''}
+    <div class="small muted" style="margin-top:6px">${r.eta ? `Encore ${dur(r.eta)} · ` : aFaire && faits < 3 ? 'Estimation du temps restant dans un instant · ' : ''}${plural(r.nouveaux || 0, 'nouvel avis', 'nouveaux avis')} · vous pouvez fermer ce volet</div>
   </div>
   <div class="warnbox">Pendant la mise à jour, évitez de changer de dossier dans l’espace professionnel : le site ne suit qu’un dossier à la fois.</div>
   ${r.feed && r.feed.length ? `<div class="card feed"><h4>Repéré à l’instant</h4>${r.feed.map((f) => `<div class="it${V.vus && V.vus.has(f.title + f.sub) ? '' : ' new'}"><b>${esc(f.title)}</b><span>${esc(f.sub)}</span></div>`).join('')}</div>` : ''}
@@ -158,7 +178,7 @@ function viewDone(c) {
   return `${statusPills()}
   <div class="card hero">
     <h2>${last.stopped ? 'Mise à jour en pause' : 'Vos clients sont à jour'}</h2>
-    <p>${plural(last.stats ? last.stats.dossiers : 0, 'dossier lu', 'dossiers lus')} en ${dur(last.duree || 0).replace('environ ', '')} · ${plural(last.stats ? last.stats.nouveaux : 0, 'nouvel avis', 'nouveaux avis')}${last.stats && last.stats.erreurs ? ` · ${plural(last.stats.erreurs, 'dossier', 'dossiers')} à relancer` : ''}</p>
+    <p>${plural(last.stats ? last.stats.dossiers : 0, 'dossier lu', 'dossiers lus')} en ${dur(last.duree || 0).replace('environ ', '')} · ${plural(last.stats ? last.stats.nouveaux : 0, 'nouvel avis', 'nouveaux avis')}${last.stats && last.stats.locaux ? ` · ${plural(last.stats.locaux, 'local professionnel lu', 'locaux professionnels lus')}` : ''}${last.stats && last.stats.erreurs ? ` · ${plural(last.stats.erreurs, 'dossier', 'dossiers')} à relancer` : ''}</p>
   </div>
   ${open.length ? `<div class="kpi" style="font-size:20px">${plural(open.length, 'action vous attend', 'actions vous attendent')}</div>
   <div class="cats">${counts.map((k) => `<button class="cat" data-cat="${k.key}"><div class="n num" style="color:${k.couleur}">${k.n}</div><div class="l">${esc(k.titre)}</div></button>`).join('')}</div>` : '<div class="card hero"><h2>Rien à traiter</h2><p>Aucun paiement à vérifier, aucune hausse au-delà de vos seuils.</p></div>'}
@@ -215,6 +235,7 @@ function bind() {
     V.settings = await ACDB.saveSettings({ scope: b.dataset.s }); V.data.settings = V.settings; render();
   });
   document.querySelectorAll('.cat[data-cat]').forEach((b) => b.onclick = () => openApp('a-traiter/' + b.dataset.cat));
+  document.querySelectorAll('.row[data-go]').forEach((r) => r.onclick = () => openApp(r.dataset.go));
 }
 
 async function start(complet) {
@@ -224,8 +245,8 @@ async function start(complet) {
   if (page.running) { toast('Une mise à jour est déjà en cours'); return; }
   const mode = scopeMode();
   const list = V.list && V.list.list && V.list.list.length && Date.now() - V.list.at < 12 * 3600e3 ? V.list.list : null;
-  const opts = { annee: ACA.anneeCampagne(), taxes: ['TF', 'CFE'], delay: V.settings.delai === 120 || !V.settings.delai ? 60 : V.settings.delai, complet: !!complet, dettes: true, amr: V.settings.amr !== false, scope: mode === 'moi' ? scopeSirens() : null, dossiers: list };
-  await chrome.runtime.sendMessage({ type: 'ac:started' });
+  const opts = { annee: ACA.anneeCampagne(), taxes: ['TF', 'CFE'], delay: V.settings.delai === 120 || !V.settings.delai ? 60 : V.settings.delai, complet: !!complet, dettes: true, amr: V.settings.amr !== false, biens: V.settings.biens !== false, scope: mode === 'moi' ? scopeSirens() : null, dossiers: list };
+  await chrome.runtime.sendMessage({ type: 'ac:started', opts });
   await toTab({ type: 'ac:start', opts });
   V.showDone = true;
 }
@@ -235,7 +256,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg && msg.type === 'ac:state') {
     const was = V.run && V.run.running;
     V.run = msg.run;
-    if (was && !msg.run.running) { V.showDone = !msg.run.error; loadData().then(render); }
+    if (was && !msg.run.running) { V.showDone = !msg.run.error && !(msg.run.last && msg.run.last.unique); loadData().then(render); }
     else if (msg.run.running) { if (!V.data) return; V.showDone = true; render(); }
   }
 });
@@ -246,4 +267,4 @@ chrome.tabs.onActivated.addListener(recheck);
 chrome.tabs.onRemoved.addListener((id) => { if (V.tab && id === V.tab.id) recheck(); });
 window.addEventListener('focus', recheck);
 check();
-ACUP.check().then((u) => { if (!u.available) return; $('#upd').innerHTML = `<div class="upd"><b>Nouvelle version ${esc(u.version)} disponible</b>${u.notes ? `<span>${esc(u.notes)}</span>` : ''}<div class="l"><a class="btn sm" href="${esc(u.zip)}" target="_blank">Télécharger</a><a class="btn sm sec" href="${esc(u.guide)}" target="_blank">Comment mettre à jour (1 min)</a></div></div>`; });
+ACUP.check().then((u) => { if (!u.available) return; $('#upd').innerHTML = `<div class="upd"><b>Nouvelle version ${esc(u.version)} disponible</b>${u.notes ? `<span>${esc(u.notes)}</span>` : ''}<span class="small">Vos données sont conservées : remplacez les fichiers, ne supprimez pas l’extension.</span><div class="l"><a class="btn sm" href="${esc(u.zip)}" target="_blank">Télécharger</a><a class="btn sm sec" href="${esc(u.guide)}" target="_blank">Comment mettre à jour (1 min)</a></div></div>`; });

@@ -1,6 +1,6 @@
 /* Relève — styles partagés (volet latéral et application) */
 :root {
-  --bg: #F6F6F3; --card: #FFFFFF; --ink: #16181D; --ink2: #4B5060; --ink3: #7A7F8C; --line: #E4E3DD; --line2: #EFEEE9;
+  --bg: #F6F6F3; --card: #FFFFFF; --ink: #16181D; --ink2: #4B5060; --ink3: #6A6F7C; --line: #E4E3DD; --line2: #EFEEE9;
   --accent: #1F3B6E; --accent-d: #142850; --accent-bg: #E9EEF7;
   --taux: #6D28D9; --taux-bg: #F3EDFF; --bases: #1D4ED8; --bases-bg: #EAF0FF; --ok: #2B6A43; --ok-bg: #E8F3EC;
   --warn: #9A6200; --warn-bg: #FFF6DD; --bad: #B42318; --bad-bg: #FDECEA; --neuf: #0F766E; --neuf-bg: #E6F5F3;
@@ -13,7 +13,7 @@ a { color: var(--accent-d); text-decoration: none; } a:hover { text-decoration: 
 button { font: inherit; color: inherit; cursor: pointer; }
 input, select, textarea { font: inherit; color: inherit; }
 .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.muted { color: var(--ink3); } .small { font-size: 12.5px; } .tiny { font-size: 11.5px; }
+.muted { color: var(--ink3); } .small { font-size: 12.5px; } .tiny { font-size: 12px; }
 .ico { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 7px 12px; font-weight: 500; white-space: nowrap; transition: background .12s, border-color .12s; }

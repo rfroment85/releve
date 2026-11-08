@@ -1,1 +1,6 @@
-{"version": "5.2.3", "date": "2026-10-26", "notes": "Mention de l’auteur (Réglages › À propos).", "zip": "https://releveavis.netlify.app/Releve.zip"}
+{
+"version": "6.1.0",
+"date": "2026-11-08",
+"notes": "Paiements vérifiés à la source (fini les « avez-vous payé ? » inutiles), onglet Dettes fiscales lisible (en retard avec majorations, à venir, payé) et une seule relance par client, plusieurs comptes impots.gouv distingués (filtre « Compte »), reprise sans relecture après une coupure ou une session expirée avec temps restant fiable, habilitations corrigées (une ligne active l’emporte sur une ligne supprimée), base minimum de CFE sur le chiffre d’affaires total et principal établissement, e-mails des clients importés, conditions d’utilisation. Vos notes et votre travail sont conservés : remplacez les fichiers du dossier Releve, ne supprimez pas l’extension dans Chrome.",
+"zip": "https://releveavis.netlify.app/Releve.zip"
+}

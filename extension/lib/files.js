@@ -110,7 +110,15 @@ function parseCorrespondance(text) {
     const c = l.split(sep).map((x) => x.replace(/^"|"$/g, '').trim());
     const siren = (c[iS >= 0 ? iS : 0] || '').replace(/\D/g, '').slice(0, 9);
     if (siren.length !== 9) continue;
-    map[siren] = { code: iC >= 0 ? c[iC] : '', nom: iN >= 0 ? c[iN] : '', collaborateur: iK >= 0 ? c[iK] : '', agence: iA >= 0 ? c[iA] : '', email: iE >= 0 ? (c[iE] || '').match(/[^\s;,]+@[^\s;,]+/)?.[0] || '' : '' };
+    const rec = { code: iC >= 0 ? c[iC] : '', nom: iN >= 0 ? c[iN] : '', collaborateur: iK >= 0 ? c[iK] : '', agence: iA >= 0 ? c[iA] : '', email: iE >= 0 ? (c[iE] || '').match(/[^\s;,]+@[^\s;,]+/)?.[0] || '' : '' };
+    const prev = map[siren];
+    if (prev) {
+      // Même SIREN sur plusieurs lignes (plusieurs dossiers fiscaux, plusieurs établissements) : on garde la première et on cumule les codes, collaborateurs et e-mails
+      const codes = [...new Set([...(prev.codes || [prev.code]), rec.code].filter(Boolean))];
+      map[siren] = { ...prev, codes, code: codes.join(', '), nom: prev.nom || rec.nom, collaborateur: prev.collaborateur || rec.collaborateur, email: prev.email || rec.email, collaborateurs: [...new Set([...(prev.collaborateurs || [prev.collaborateur]), rec.collaborateur].filter(Boolean))] };
+      continue;
+    }
+    map[siren] = rec;
   }
   return map;
 }
@@ -212,6 +220,8 @@ function parseCa(text) {
   const head = lines[0].split(sep).map(norm);
   const used = new Set();
   const find = (...keys) => { for (const k of keys) { const i = head.findIndex((h, j) => !used.has(j) && (k.length <= 2 ? h === k : h.includes(k))); if (i >= 0) { used.add(i); return i; } } return -1; };
+  const iSt = head.some((h) => h.includes('siren')) ? head.findIndex((h) => h === 'siret' || h === 'nic' || h.includes('etablissement')) : -1; if (iSt >= 0) used.add(iSt);
+  const iCode = find('codedossier', 'codeclient', 'dossier'); // code du dossier (plusieurs dossiers fiscaux possibles sous un même SIREN)
   const iS = find('siren', 'siret'), iD = find('duree', 'mois'), iCr = find('creation', 'debutactivite', 'immatriculation'), iCl = find('clotur', 'finexercice', 'datefin', 'exercice'), iCa = find('chiffre', 'recette', 'ca', 'cahtc', 'caht', 'ventes', 'produit');
   if (iS < 0 || iCa < 0) throw new Error('colonnes SIREN et chiffre d’affaires introuvables');
   const nb = (x) => parseFloat(String(x || '').replace(/[\s  €]/g, '').replace(',', '.')) || 0;
@@ -222,7 +232,8 @@ function parseCa(text) {
     if (siren.length !== 9) continue;
     const o = map[siren] = map[siren] || { exos: [], creation: '' };
     if (iCr >= 0 && c[iCr]) o.creation = normDate(c[iCr]);
-    if (c[iCa] !== '' && c[iCa] !== undefined) o.exos.push({ cloture: iCl >= 0 ? normDate(c[iCl]) : '', duree: iD >= 0 ? nb(c[iD]) || 12 : 12, ca: nb(c[iCa]) });
+    const brut = (c[iS] || '').replace(/\D/g, ''), siret = iSt >= 0 ? (c[iSt] || '').replace(/\D/g, '') : (brut.length === 14 ? brut : '');
+    if (c[iCa] !== '' && c[iCa] !== undefined) o.exos.push({ cloture: iCl >= 0 ? normDate(c[iCl]) : '', duree: iD >= 0 ? nb(c[iD]) || 12 : 12, ca: nb(c[iCa]), code: iCode >= 0 ? (c[iCode] || '') : '', nic: siret.length === 14 ? siret.slice(9) : siret.length === 5 ? siret : '' });
   }
   return map;
 }
