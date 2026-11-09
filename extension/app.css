@@ -364,3 +364,4 @@ body:has(.selbar) .toast { bottom: 84px; }
 @media (prefers-reduced-motion: reduce) { .page.anim .drow { animation: none !important; } }
 
 .btn.spin svg { animation: rb-spin 1s linear infinite; } @media (prefers-reduced-motion: reduce) { .btn.spin svg { animation: none; } }
+.scrollbox table.t th { top: 0; z-index: 1; }

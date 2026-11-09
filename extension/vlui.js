@@ -72,20 +72,32 @@ async function vlCadastre() {
 }
 const vlScope = () => { const s = scopeMoi() ? new Set(scopeSirens()) : null; return VL.locaux.filter((l) => (!s || s.has(l.siren)) && match(l.nom, l.siren, l.adresse, l.ville, l.categorie)); };
 const vlDossiersSans = () => (A.data.biens || []).filter((r) => r.indispo);
-// Dossiers sans accès à « Gérer mes biens immobiliers », dans le périmètre affiché (Mon portefeuille / Tout le cabinet), triés par nom
-function vlSansAcces() {
-  const s = scopeMoi() ? new Set(scopeSirens()) : null, corr = A.S.correspondance || {};
-  return vlDossiersSans().filter((r) => !s || s.has(r.siren)).map((r) => { const c = corr[r.siren] || {}; return { siren: r.siren, nom: nomDe(r.siren) || r.nom || '', code: c.code || '', collab: c.collaborateur || '', email: c.email || '', motif: r.indispo, at: r.at }; })
-    .sort((a, b) => (a.nom || '~').localeCompare(b.nom || '~', 'fr'));
+// Dossiers sans accès à « Gérer mes biens immobiliers », dans le périmètre affiché (Mon portefeuille / Tout le cabinet).
+// Chaque dossier porte sa taxe foncière (avis de la campagne, sinon de l'année précédente) : un dossier avec taxe foncière est propriétaire,
+// c'est lui qui compte ; sans taxe foncière, la délégation est probablement inutile.
+const VL_SANS_FILTRES = { tf: 'Avec taxe foncière', sanstf: 'Sans taxe foncière', tous: 'Tous' };
+function vlSansAcces(filtre = 'tous') {
+  const s = scopeMoi() ? new Set(scopeSirens()) : null, corr = A.S.correspondance || {}, tf = {};
+  for (const a of A.c.avis || []) {
+    if (a.taxe !== 'TF' || (a.annee !== A.c.annee && a.annee !== A.c.anneeN1)) continue;
+    const o = tf[a.siren] = tf[a.siren] || {};
+    o[a.annee] = (o[a.annee] || 0) + (a.m || 0);
+  }
+  const l = vlDossiersSans().filter((r) => !s || s.has(r.siren)).map((r) => {
+    const c = corr[r.siren] || {}, t = tf[r.siren] || {}, annee = t[A.c.annee] !== undefined ? A.c.annee : t[A.c.anneeN1] !== undefined ? A.c.anneeN1 : '';
+    return { siren: r.siren, nom: nomDe(r.siren) || r.nom || '', code: c.code || '', collab: c.collaborateur || '', email: c.email || '', motif: r.indispo, at: r.at, tf: annee ? Math.round(t[annee]) : 0, tfAnnee: annee };
+  });
+  const garde = filtre === 'tf' ? l.filter((x) => x.tfAnnee) : filtre === 'sanstf' ? l.filter((x) => !x.tfAnnee) : l;
+  return garde.sort((a, b) => (b.tf - a.tf) || (a.nom || '~').localeCompare(b.nom || '~', 'fr'));
 }
 const VL_SANS_AFAIRE = 'Demander au client la délégation « Gérer mes biens immobiliers » (ou le descriptif de ses locaux), puis cliquer sur « Actualiser » dans sa fiche Relève';
-function feuilleVlSans() {
-  const l = vlSansAcces();
-  return { name: 'Sans accès aux biens', title: 'Dossiers sans accès aux biens immobiliers', subtitle: `${scopeMoi() ? 'Mon portefeuille' : 'Tout le cabinet'} · ${plural(l.length, 'dossier')} · extrait le ${new Date().toLocaleDateString('fr-FR')} · la liste se met à jour dans l’extension Relève · Relève`, tab: true,
-    cols: [{ h: 'Client', w: 34, style: () => 6 }, { h: 'SIREN', w: 12 }, { h: 'Code', w: 10 }, { h: 'Collaborateur', w: 16 }, { h: 'E-mail client', w: 28 }, { h: 'Message d’impots.gouv', w: 40 }, { h: 'Lu le', w: 11 }, { h: 'À faire', w: 60 }],
-    rows: l.map((x) => [x.nom, x.siren, x.code, x.collab, x.email, x.motif, x.at ? new Date(x.at).toLocaleDateString('fr-FR') : '', VL_SANS_AFAIRE]) };
+function feuilleVlSans(filtre = 'tous') {
+  const l = vlSansAcces(filtre);
+  return { name: 'Sans accès aux biens', title: 'Dossiers sans accès aux biens immobiliers', subtitle: `${scopeMoi() ? 'Mon portefeuille' : 'Tout le cabinet'} · ${VL_SANS_FILTRES[filtre].toLowerCase()} · ${plural(l.length, 'dossier')}, les plus fortes taxes foncières en premier · extrait le ${new Date().toLocaleDateString('fr-FR')} · la liste se met à jour dans l’extension Relève · Relève`, tab: true,
+    cols: [{ h: 'Client', w: 34, style: () => 6 }, { h: 'SIREN', w: 12 }, { h: 'Code', w: 10 }, { h: 'Collaborateur', w: 16 }, { h: 'Taxe foncière', w: 13, t: 'eur' }, { h: 'Année', w: 7 }, { h: 'E-mail client', w: 28 }, { h: 'Message d’impots.gouv', w: 40 }, { h: 'Lu le', w: 11 }, { h: 'À faire', w: 60 }],
+    rows: l.map((x) => [x.nom, x.siren, x.code, x.collab, x.tfAnnee ? x.tf : '', x.tfAnnee, x.email, x.motif, x.at ? new Date(x.at).toLocaleDateString('fr-FR') : '', VL_SANS_AFAIRE]) };
 }
-function buildXlsxVlSans() { return buildWorkbook([feuilleVlSans()]); }
+function buildXlsxVlSans() { return buildWorkbook([feuilleVlSans(VL.sansFiltre || 'tf')]); }
 const vlBiensStats = () => { const recs = A.data.biens || []; return { dossiers: recs.length, pro: recs.reduce((s, r) => s + (r.biens || []).filter((b) => b.pro).length, 0), autres: recs.reduce((s, r) => s + (r.biens || []).filter((b) => !b.pro).length, 0), attendues: recs.reduce((s, r) => s + (r.attendues || []).length, 0), indispo: vlDossiersSans().length }; };
 
 // ---- Relecture des avis déjà sur le poste (avis lus avant la 6.0 : le détail par adresse n'était pas extrait) ----
@@ -161,10 +173,12 @@ function pageValeurLocative() {
   ${Lf.map((l, i) => { const s = l.st, ref = l.analyse && l.analyse.ref, calc = l.analyse && l.analyse.calcul, g = l.analyse && l.analyse.groupe, act = vlAction(l);
     return `<tr class="vlrow" style="--i:${Math.min(i, 20)}" data-go="#client/${l.siren}/vl"><td><a href="#client/${l.siren}/vl"><b>${esc(l.nom)}</b></a>${l.code ? `<div class="tiny muted">Dossier ${esc(l.code)}${l.collab ? ' · ' + esc(l.collab) : ''}</div>` : ''}</td><td>${esc(l.adresse)}<div class="tiny muted">${esc(l.ville)}${l.droit && !/Propri/.test(l.droit) ? ' · ' + esc(l.droit) : ''}</div></td><td class="small">${l.categorie && l.categorie !== 'HORS' ? `${esc(ACVL.COURT[l.categorie] || l.categorieLibelle)}<div class="tiny muted" title="${esc(l.categorieLibelle)}">${l.categorie}</div>` : esc(l.categorieLibelle)}</td><td>${vlPillHtml(s)}${s.k === 'NONCALC' ? `<div class="tiny muted">${esc(s.raison || '')}</div>` : ''}</td><td class="r num">${ref ? fmtK(ref.base) : '—'}${g ? `<div class="tiny muted">${g.nb} locaux</div>` : ''}</td><td class="r num">${s.k === 'TROP' && s.signal && s.signal.simulation ? `<span class="ok">${fmtK(s.signal.simulation.baseGroupe || s.signal.simulation.base)}</span><div class="tiny muted">si corrigé</div>` : `${g ? fmtK(g.base) : calc ? fmtK(calc.base) : '—'}`}${s.k !== 'TROP' && l.analyse && l.analyse.ecart !== null && l.analyse.ecart !== undefined ? `<div class="tiny ${l.analyse.ecart < -0.05 ? 'up' : 'muted'}">${pcv(l.analyse.ecart * 100)}</div>` : ''}</td><td class="r num ${s.enjeu > 100 ? (s.ton === 'bad' ? 'up' : 'warnc') : ''}">${s.enjeu > 100 ? (s.certitude === 'possible' ? '≈ ' : '') + fmtK(s.enjeu) + ' €' : ''}</td><td class="small">${act.do ? `<a href="#client/${l.siren}/vl" class="vlact">${IC[act.ico] || ''} ${act.lib}</a>` : `<span class="muted">${act.lib}</span>`}</td></tr>`; }).join('')}
   ${!Lf.length ? '<tr><td colspan="8" class="muted">Aucun local professionnel dans ce périmètre.</td></tr>' : ''}</tbody></table></div>
-  ${(() => { const l = vlSansAcces(); return l.length ? `<div class="card av" style="margin-top:14px"><div class="hd" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">Dossiers sans accès aux biens immobiliers (${l.length})</h3><button class="btn sm" data-exp="vlsans">${IC.down} Exporter la liste complète</button></div>
-    <p class="small muted" style="margin:8px 0">Le service « Gérer mes biens immobiliers » n’est pas délégué au cabinet pour ces dossiers : demandez au client la délégation (ou le descriptif de ses locaux).</p>
+  ${(() => { const tous = vlSansAcces(); if (!tous.length) return ''; const f = VL.sansFiltre || 'tf', l = vlSansAcces(f), nTf = tous.filter((x) => x.tfAnnee).length, n = { tf: nTf, sanstf: tous.length - nTf, tous: tous.length };
+    return `<div class="card av" id="vlSans" style="margin-top:14px"><div class="hd" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">Dossiers sans accès aux biens immobiliers (${tous.length})</h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="vlSansF" title="Un dossier avec taxe foncière est propriétaire : c’est lui qu’il faut raccorder en priorité">${Object.entries(VL_SANS_FILTRES).map(([k, t]) => `<option value="${k}"${k === f ? ' selected' : ''}>${t} (${n[k]})</option>`).join('')}</select><button class="btn sm" data-exp="vlsans"${l.length ? '' : ' disabled'}>${IC.down} Exporter ${l.length === tous.length ? 'la liste complète' : `ces ${l.length}`}</button></div></div>
+    <p class="small muted" style="margin:8px 0">Le service « Gérer mes biens immobiliers » n’est pas délégué au cabinet pour ces dossiers : demandez au client la délégation (ou le descriptif de ses locaux). Ceux qui paient une taxe foncière sont propriétaires : commencez par eux, les plus fortes taxes en premier.</p>
     <p class="small" style="margin:0 0 10px"><b>Cette liste se met à jour dans l’extension Relève</b>, pas sur impots.gouv : une fois la délégation accordée, ouvrez la fiche du client dans Relève et cliquez sur «&nbsp;Actualiser&nbsp;» (quelques secondes). Sinon, Relève revérifie ces dossiers chaque semaine, lors des mises à jour lancées depuis le volet latéral.</p>
-    <div class="small" style="max-height:170px;overflow:auto;padding:8px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--bg)">${l.map((r) => `<a href="#client/${r.siren}" style="white-space:nowrap">${esc(r.nom || fmtSiren(r.siren))}</a>`).join(' · ')}</div></div>` : ''; })()}
+    ${l.length ? `<div class="scrollbox" style="max-height:260px;overflow:auto;border:1px solid var(--line2);border-radius:8px"><table class="t" style="margin:0"><thead><tr><th>Client</th><th>Code</th><th>Collaborateur</th><th class="r">Taxe foncière</th></tr></thead><tbody>${l.map((r) => `<tr><td><a href="#client/${r.siren}">${esc(r.nom || fmtSiren(r.siren))}</a></td><td>${esc(r.code)}</td><td>${esc(r.collab)}</td><td class="r num">${r.tfAnnee ? `${eur(r.tf)}${r.tfAnnee !== A.c.annee ? ` <span class="tiny muted">(${r.tfAnnee})</span>` : ''}` : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>` : `<p class="small muted" style="margin:0">Aucun dossier dans ce filtre.</p>`}</div>`; })()}
   ${vlLexique()}
   <p class="tiny muted" style="margin-top:14px">${vlMethodeLien()}</p>`;
 }
@@ -189,6 +203,7 @@ function bindValeurLocative(arg) {
   $$('[data-filtre]').forEach((b) => b.onclick = () => { VL.filtre = b.dataset.filtre || null; page(); const t = $('#vlTable'); if (t && VL.filtre) t.scrollIntoView({ behavior: calme() ? 'auto' : 'smooth', block: 'start' }); });
   $$('[data-niv]').forEach((b) => b.onclick = async () => { A.S = await ACDB.saveSettings({ vlNiveau: b.dataset.niv }); A.data.settings = A.S; page(); });
   $$('.vlrow').forEach((r) => r.onclick = (ev) => { if (ev.target.closest('a')) return; location.hash = r.dataset.go; });
+  const sf = $('#vlSansF'); if (sf) sf.onchange = () => { VL.sansFiltre = sf.value; const y = scrollY; page(); scrollTo(0, y); };
   const tb = $('#vlTourBtn'); if (tb) tb.onclick = () => vlTour(true);
   if ($('#page').classList.contains('anim')) vlCountUp(); vlMigrer(); vlCadastre();
   if (String(arg || '') === 'lexique') { const e = $('#lexique'); if (e) { e.open = true; setTimeout(() => e.scrollIntoView({ block: 'start' }), 50); } }
@@ -415,7 +430,7 @@ function vlBrouillon(kind, l) {
 
 // ---- Export : classeur des locaux ----
 function buildXlsxVl() {
-  const L = vlScope(), sans = vlSansAcces().length ? [feuilleVlSans()] : [];
+  const L = vlScope(), sans = vlSansAcces().length ? [feuilleVlSans('tous')] : [];
   return buildWorkbook([{ name: 'Locaux', title: `Valeur locative des locaux professionnels · campagne ${A.c.annee}`, subtitle: `${scopeMoi() ? 'Mon portefeuille' : 'Tout le cabinet'} · extrait le ${new Date().toLocaleDateString('fr-FR')} · Relève`, tab: true,
     cols: [{ h: 'Client', w: 30, style: () => 6 }, { h: 'SIREN', w: 12 }, { h: 'Code', w: 10 }, { h: 'Collaborateur', w: 14 }, { h: 'Adresse', w: 30 }, { h: 'Commune', w: 22 }, { h: 'Parcelle', w: 12 }, { h: 'N° local', w: 14 }, { h: 'Droit', w: 16 }, { h: 'Statut', w: 22, style: (v) => /Trop payé probable/.test(v) ? 9 : /Rien à signaler/.test(v) ? 8 : undefined }, { h: 'Enjeu / an', w: 12, t: 'eur' }, { h: 'À faire', w: 30 }, { h: 'Catégorie', w: 9 }, { h: 'Libellé', w: 34 }, { h: 'P1', w: 8, t: 'n' }, { h: 'P2 couv.', w: 8, t: 'n' }, { h: 'P2 non couv.', w: 9, t: 'n' }, { h: 'PK couv.', w: 8, t: 'n' }, { h: 'PK non couv.', w: 9, t: 'n' }, { h: 'Surface pondérée', w: 10, t: 'n' }, { h: 'Secteur', w: 8 }, { h: 'Tarif €/m²', w: 9, t: 'n' }, { h: 'VL brute', w: 11, t: 'eur' }, { h: 'VL neutralisée', w: 11, t: 'eur' }, { h: 'VL 1970 reconstituée', w: 12, t: 'eur' }, { h: 'Base calculée', w: 11, t: 'eur' }, { h: 'Base avis', w: 11, t: 'eur' }, { h: 'Écart', w: 8, t: 'pct' }, { h: 'Points à vérifier', w: 90, t: 'long' }, { h: 'Questions au client', w: 90, t: 'long' }, { h: 'Note', w: 40, t: 'long' }],
     rows: L.map((l) => { const a = l.analyse || {}, c = a.calcul, st = l.st, g = a.groupe; return [l.nom, l.siren, l.code, l.collab, l.adresse, l.ville, `${l.section || ''} ${l.parcelle || ''}`.trim(), l.invariant, l.droit, st.lib, st.enjeu > 100 ? Math.round(st.enjeu) : '', vlAction(l).lib, l.categorie, l.categorieLibelle, l.surfaces.p1 || '', l.surfaces.p2c || '', l.surfaces.p2nc || '', l.surfaces.pk1 || '', l.surfaces.pk2 || '', Math.round(l.sp * 10) / 10, c ? c.secteur : '', c && c.detail[0] ? c.detail[0].tarif : '', c ? Math.round(c.brute) : '', c ? Math.round(c.neutralisee) : '', c && (c.vl70 || (g && g.vl70)) ? Math.round(c.vl70 || g.vl70) : '', c ? Math.round(g ? g.base : c.base) : '', a.ref ? a.ref.base : '', a.ecart !== null && a.ecart !== undefined ? a.ecart : '', (a.signaux || []).map((s) => s.titre).join(' ; '), (a.signaux || []).map((s) => s.question).filter(Boolean).join(' ; '), l.note || '']; }) }, ...sans]);
