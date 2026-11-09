@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Relève</title>
-<meta name="description" content="Les avis de taxe foncière et de CFE de tous vos clients, lus dans votre espace professionnel impots.gouv et triés par urgence. Et pour chaque local professionnel, le calcul de l’administration refait au tarif officiel.">
+<meta name="description" content="La taxe foncière et la CFE de tous vos clients, lues dans votre espace professionnel impots.gouv : avis, paiements, dettes fiscales, hausses expliquées, base minimum de CFE contrôlée, et la valeur locative des locaux professionnels recalculée.">
 <link rel="icon" href="img/icon.png">
 <link rel="stylesheet" href="site.css">
 </head>
@@ -20,37 +20,34 @@
     <div class="glow" aria-hidden="true"></div>
     <div class="hero-txt">
       <p class="eyebrow">Extension Chrome et Edge · gratuite · vos données restent sur votre poste</p>
-      <h1>Vos clients paient-ils la bonne taxe foncière ?</h1>
-      <p class="lead">Relève lit les avis de taxe foncière et de CFE dans votre espace professionnel impots.gouv, les trie par urgence, explique chaque hausse — et refait le calcul de l’administration pour chaque local professionnel afin de repérer ceux qui paient trop.</p>
+      <h1>Taxe foncière et CFE&nbsp;: tous vos clients contrôlés, triés par urgence.</h1>
+      <p class="lead">Relève lit dans votre espace professionnel impots.gouv les avis, les paiements et les dettes fiscales de chaque client. Il explique chaque hausse, contrôle la base minimum de CFE, signale ce qui reste à payer — et, nouveauté de la version 6, refait le calcul de l’administration pour chaque local professionnel.</p>
       <div class="cta">
         <a class="btn primary" href="Releve.zip" download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10.5l5 5 5-5"/><path d="M5 20h14"/></svg>Télécharger Relève</a>
         <a class="btn" href="mode-emploi.html">Mode d’emploi (3 min)</a>
       </div>
-      <p class="note">Conçu par un expert-comptable, pour les cabinets : <a href="https://www.linkedin.com/in/romain-froment-expert-comptable-var/" rel="noopener">Romain Froment</a>.<br>Version <span id="v">6.0.0</span> · Chrome ou Edge, Windows ou Mac · <a href="mode-emploi.html#claude">fonctionne aussi avec Claude</a></p>
+      <p class="note">Conçu par un expert-comptable, pour les cabinets : <a href="https://www.linkedin.com/in/romain-froment-expert-comptable-var/" rel="noopener">Romain Froment</a>.<br>Version <span id="v">6.1.4</span> · Chrome ou Edge, Windows ou Mac · <a href="mode-emploi.html#claude">fonctionne aussi avec Claude</a></p>
     </div>
 
-    <!-- Démonstration animée : un local, le calcul en escalier, le statut. Données fictives. -->
-    <div class="demo" id="demo" aria-label="Démonstration : un local professionnel contrôlé par Relève">
-      <div class="demo-hd"><span class="demo-dot"></span><span class="demo-dot"></span><span class="demo-dot"></span><span class="demo-title">Relève · Valeur locative</span><button class="demo-replay" id="replay" title="Rejouer">↻</button></div>
+    <!-- Démonstration animée : la liste de travail, CFE et taxe foncière mêlées. Données fictives. -->
+    <div class="demo" id="demo" aria-label="Démonstration : la liste de travail de Relève">
+      <div class="demo-hd"><span class="demo-dot"></span><span class="demo-dot"></span><span class="demo-dot"></span><span class="demo-title">Relève · À traiter</span><button class="demo-replay" id="replay" title="Rejouer">↻</button></div>
       <div class="demo-body">
-        <div class="demo-local"><b>18 rue des Tisserands</b> <span class="muted">Fréjus · parcelle AX 512</span><div class="muted small">boutique sur rue &lt; 400 m² <span class="pill">MAG1</span></div></div>
-        <div class="demo-steps">
-          <div class="st" style="--i:0"><span class="l">Surface pondérée</span><span class="v">1 135 m²</span><span class="s">946 m² + parking × 0,2</span></div>
-          <div class="st" style="--i:1"><span class="l">× tarif officiel</span><span class="v">207,90 €/m²</span><span class="s">MAG1, secteur 4</span></div>
-          <div class="st" style="--i:2"><span class="l">Base calculée</span><span class="v">21 232 €</span><span class="s">avec planchonnement</span></div>
-          <div class="st bad" style="--i:3"><span class="l">Base de l’avis</span><span class="v">21 220 €</span><span class="s">cohérente… mais</span></div>
-        </div>
-        <div class="demo-sig" style="--i:4"><b>946 m² en « boutique &lt; 400 m² »</b><span class="s">Au-delà de 400 m², le local relève de MAG4, dont le tarif est bien plus bas.</span></div>
-        <div class="demo-res" style="--i:5"><span class="pill bad">Trop payé probable</span><span class="big">≈ <span id="cnt" data-to="2443">0</span> € par an</span><span class="s">Réclamation prête à relire · délai 31/12</span></div>
+        <div class="tk" style="--i:0"><span class="tag cfe">CFE</span><span class="tx"><b>SARL Ateliers du Var</b><span class="s">Deux établissements sur la base minimum : elle n’est due qu’au principal</span></span><span class="m">≈ 690 €</span></div>
+        <div class="tk" style="--i:1"><span class="tag vl">Taxe foncière</span><span class="tx"><b>SCI du Port</b><span class="s">946 m² classés « boutique &lt; 400 m² » : catégorie à corriger</span></span><span class="m">≈ 2 443 €</span></div>
+        <div class="tk" style="--i:2"><span class="tag dette">Dette fiscale</span><span class="tx"><b>Hôtel Les Pins</b><span class="s">CFE 2025 restée impayée, majoration de 10 % appliquée</span></span><span class="m">1 980 €</span></div>
+        <div class="tk" style="--i:3"><span class="tag tf">Hausse</span><span class="tx"><b>SCI Rochebrune</b><span class="s">Taxe foncière + 18 % : taux votés par la commune, message prêt</span></span><span class="m">+ 640 €</span></div>
+        <div class="tk" style="--i:4"><span class="tag ok">Payé</span><span class="tx"><b>SCI Boréale</b><span class="s">Taxe foncière 2026 réglée le 14/10, vu sur impots.gouv</span></span><span class="m ok">✓</span></div>
+        <div class="demo-res" style="--i:5"><span class="pill bad">À réclamer</span><span class="big">≈ <span id="cnt" data-to="3133">0</span> € par an</span><span class="s">CFE et taxe foncière confondues · chaque action arrive avec son message prêt</span></div>
       </div>
-      <p class="demo-note">Données fictives. Le calcul réel est expliqué pas à pas sur la <a href="valeur-locative.html">page Valeur locative</a>.</p>
+      <p class="demo-note">Données fictives.</p>
     </div>
   </div>
 
   <section class="stats reveal" aria-label="Chiffres clés">
+    <div><b data-to="2">0</b><span>impôts suivis de bout en bout : taxe foncière et CFE</span></div>
     <div><b data-to="101">0</b><span>départements : grilles tarifaires embarquées</span></div>
-    <div><b data-to="38">0</b><span>catégories de locaux professionnels</span></div>
-    <div><b data-to="2">0</b><span>minutes de visite guidée pour comprendre l’écran</span></div>
+    <div><b data-to="1">0</b><span>clic pour actualiser un seul client</span></div>
     <div><b>0</b><span>donnée client envoyée à un serveur</span></div>
   </section>
 
@@ -61,8 +58,51 @@
   </section>
 
   <section style="padding-top:10px">
-    <h2 class="reveal">Quatre statuts, écrits pour quelqu’un qui n’a jamais lu un avis</h2>
-    <p class="lead reveal">Chaque local professionnel reçoit un statut en français courant, avec l’enjeu par an et l’action à faire. Les locaux à réclamer entrent dans la liste de travail comme les autres actions.</p>
+    <h2 class="reveal">Trois contrôles, une seule liste</h2>
+    <p class="lead reveal">Chaque point trouvé devient une action, avec son montant, son échéance et le message à envoyer. Les plus urgentes en premier, quel que soit l’impôt.</p>
+    <div class="grid3 ctl">
+      <div class="card reveal" style="--i:0"><span class="tag cfe">CFE</span><h3>La base minimum vérifiée</h3><ul>
+        <li>Comparée au chiffre d’affaires du redevable et au plafond légal de sa tranche.</li>
+        <li>Cotisation minimum non due quand le chiffre d’affaires ne dépasse pas 5 000 €.</li>
+        <li>Plusieurs établissements : due une seule fois, au principal établissement.</li>
+        <li>Exonérations de création à contrôler, hausses expliquées par collectivité.</li></ul></div>
+      <div class="card reveal" style="--i:1"><span class="tag tf">Taxe foncière</span><h3>Chaque hausse comprise</h3><ul>
+        <li>Taux votés, bases, biens nouveaux : la part de chacun, collectivité par collectivité.</li>
+        <li>Réclamation possible repérée quand les bases augmentent.</li>
+        <li>Message au client prêt, avec les bons chiffres.</li>
+        <li><b>Nouveau</b> : la valeur locative des locaux professionnels recalculée (voir plus bas).</li></ul></div>
+      <div class="card reveal" style="--i:2"><span class="tag dette">Paiements et dettes</span><h3>Ce qui reste à payer</h3><ul>
+        <li>Paiements de taxe foncière et de CFE lus sur impots.gouv : plus besoin de demander au client.</li>
+        <li>Clients à prévenir avant l’échéance quand ils paient eux-mêmes.</li>
+        <li>Onglet Dettes fiscales : en retard (avec la majoration), à venir, réglées.</li>
+        <li>Une seule relance par client, prête à envoyer.</li></ul></div>
+    </div>
+  </section>
+
+  <section class="nv" id="taxe-fonciere">
+    <div class="nv-txt">
+      <p class="eyebrow"><span class="pill acc">Nouveau dans la version 6</span></p>
+      <h2 class="reveal">La taxe foncière des locaux professionnels, recalculée</h2>
+      <p class="lead reveal" style="font-size:17px">Bureaux, boutiques, ateliers, hôtels : Relève refait le calcul de l’administration pour chaque local, et repère ceux qui paient trop.</p>
+      <ol class="nv-steps">
+        <li class="reveal" style="--i:0"><b>Les fiches du local récupérées</b>Surfaces, catégorie, classement : ce que l’administration a retenu, lu dans votre espace professionnel.</li>
+        <li class="reveal" style="--i:1"><b>Le calcul légal refait</b>Surface pondérée × tarif officiel de la catégorie et du secteur, coefficients compris : 101 départements, 38 catégories.</li>
+        <li class="reveal" style="--i:2"><b>Le local situé sur le cadastre</b>Parcelle, emprise au sol et photo aérienne IGN, pour voir le bâtiment.</li>
+        <li class="reveal" style="--i:3"><b>Les mètres carrés vérifiés</b>La surface déclarée est confrontée à ce que le bâti permet.</li>
+        <li class="reveal" style="--i:4"><b>La catégorie contrôlée</b>Une boutique de 946 m² classée « moins de 400 m² », un hôtel classé en bureaux : le signal est donné.</li>
+        <li class="reveal" style="--i:5"><b>La réclamation préparée</b>L’enjeu par an est chiffré, le brouillon rédigé. Vous relisez, vous envoyez.</li>
+      </ol>
+      <p class="reveal"><a class="btn" href="valeur-locative.html">Comprendre le calcul pas à pas</a></p>
+    </div>
+    <div class="nv-vid reveal">
+      <div class="shot video"><video controls playsinline preload="metadata" poster="img/releve-taxe-fonciere-poster.jpg" width="1080" height="1350"><source src="img/releve-taxe-fonciere.mp4" type="video/mp4">Votre navigateur ne lit pas cette vidéo : <a href="img/releve-taxe-fonciere.mp4">la télécharger</a>.</video></div>
+      <p class="note">La nouveauté taxe foncière en 53 secondes. Sans voix, avec musique. Données fictives.</p>
+    </div>
+  </section>
+
+  <section style="padding-top:10px">
+    <h3 class="reveal" style="font-size:22px;margin:0 0 6px">Quatre statuts, écrits pour quelqu’un qui n’a jamais lu un avis</h3>
+    <p class="lead reveal" style="font-size:17px">Chaque local professionnel reçoit un statut en français courant, avec l’enjeu par an et l’action à faire.</p>
     <div class="statuts">
       <div class="card reveal" style="--i:0"><span class="pill bad">Trop payé probable</span><p>Un défaut précis de la fiche (catégorie, surface, classement) fait payer plus de 100 € de trop par an. Relève chiffre l’enjeu et rédige la réclamation.</p></div>
       <div class="card reveal" style="--i:1"><span class="pill warn">Trop payé possible</span><p>L’avis dépasse le recalcul au tarif officiel sans que la fiche l’explique. Relève rédige la demande de relevé de propriété, qui tranche.</p></div>
@@ -77,13 +117,13 @@
   </section>
 
   <section style="padding-top:10px">
-    <h2 class="reveal">Ce que vous obtenez</h2>
+    <h2 class="reveal">Et au quotidien</h2>
     <div class="grid3 g4">
-      <div class="card reveal" style="--i:0"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></span><h3>Une liste de travail</h3><p>Paiements à vérifier, clients à prévenir, créances échues, réclamations possibles, hausses à expliquer, trop payé probable : chaque action avec son montant, son échéance et son bouton.</p></div>
-      <div class="card reveal" style="--i:1"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/></svg></span><h3>Chaque hausse expliquée</h3><p>Taux votés, bases, biens nouveaux : la part de chacun, collectivité par collectivité, et un verdict en une phrase.</p></div>
-      <div class="card reveal" style="--i:2"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l14-14 4 4L7 21H3z"/><path d="M14 6l2 2M11 9l2 2M8 12l2 2"/></svg></span><h3>La valeur locative recalculée</h3><p>Fiche du local, grille tarifaire du département, cadastre et photo aérienne IGN : le calcul de l’administration refait, local par local.</p></div>
-      <div class="card reveal" style="--i:3"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></svg></span><h3>Les messages prêts</h3><p>Message au client, réclamation, demande de relevé de propriété : rédigés avec les bons chiffres, à relire et envoyer vous-même.</p></div>
-      <div class="card reveal" style="--i:4"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8.5 9.5h7M8.5 12.5h4.5"/></svg></span><h3>Questions en un clic</h3><p>« Qui paie trop de taxe foncière ? », « quels clients doivent payer avant le 15/12 ? » : la réponse vient des avis lus sur votre poste. Avec Claude aussi, si vous le souhaitez.</p></div>
+      <div class="card reveal" style="--i:0"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></span><h3>Une liste de travail</h3><p>Paiements à vérifier, clients à prévenir, dettes, réclamations, hausses à expliquer, trop payé : chaque action avec son montant, son échéance et son bouton.</p></div>
+      <div class="card reveal" style="--i:1"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></svg></span><h3>Les messages prêts</h3><p>Message au client, relance, réclamation, demande de relevé de propriété : rédigés avec les bons chiffres, déjà adressés au client si vous avez importé son e-mail.</p></div>
+      <div class="card reveal" style="--i:2"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg></span><h3>Un client actualisé en un clic</h3><p>Depuis sa fiche, Relève relit ses avis, ses paiements et ses dettes en quelques secondes. Une coupure ? La lecture reprend où elle s’était arrêtée.</p></div>
+      <div class="card reveal" style="--i:3"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18.5 14.8c1.2.7 1.9 2.1 2.1 4.2"/></svg></span><h3>Plusieurs comptes impots.gouv</h3><p>Chaque donnée garde le compte d’où elle vient. Tout s’affiche ensemble, ou un compte à la fois. Les habilitations de chaque client sont listées.</p></div>
+      <div class="card reveal" style="--i:4"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8.5 9.5h7M8.5 12.5h4.5"/></svg></span><h3>Questions en un clic</h3><p>« Quels clients ont une CFE impayée ? », « qui paie trop de taxe foncière ? » : la réponse vient des données lues sur votre poste. Avec Claude aussi, si vous le souhaitez.</p></div>
       <div class="card reveal" style="--i:5"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></span><h3>Lecture seule</h3><p>Vous vous connectez vous-même. Relève ne paie rien, ne déclare rien, n’envoie aucun message et ne modifie rien sur impots.gouv.</p></div>
     </div>
   </section>
@@ -123,8 +163,9 @@ fetch('version.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{document.get
   // Apparitions au défilement
   const io = new IntersectionObserver((es) => es.forEach((e) => { if (!e.isIntersecting) return; e.target.classList.add('in'); e.target.querySelectorAll('[data-to]').forEach(count); io.unobserve(e.target); }), { threshold: .2 });
   document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
-  // La vidéo démarre (muette) quand elle entre à l'écran, et se met en pause quand elle en sort
-  const film = document.getElementById('film'); if (film) { new IntersectionObserver((es) => es.forEach((e) => { if (!e.isIntersecting && !film.paused) film.pause(); }), { threshold: .2 }).observe(film); }
+  // Les vidéos se mettent en pause quand elles sortent de l'écran, et une seule joue à la fois
+  const vio = new IntersectionObserver((es) => es.forEach((e) => { if (!e.isIntersecting && !e.target.paused) e.target.pause(); }), { threshold: .2 });
+  document.querySelectorAll('video').forEach((v) => { vio.observe(v); v.addEventListener('play', () => document.querySelectorAll('video').forEach((o) => { if (o !== v && !o.paused) o.pause(); })); });
 })();
 </script>
 </body>

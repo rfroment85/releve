@@ -249,7 +249,11 @@ const ACMCP = (() => {
         total_locaux: l.length, affiches: Math.min(l.length, lim),
         repartition: Object.fromEntries(Object.keys(ACVL.VERDICTS).map((k) => [ACVL.VERDICTS[k], l.filter((x) => x.analyse.verdict && x.analyse.verdict.code === k).length]).filter(([, n]) => n)),
         gain_estime_total_par_an: Math.round(l.filter((x) => x.analyse.verdict && x.analyse.verdict.code === 'ROUGE').reduce((s, x) => s + x.gain, 0)),
-        dossiers_sans_acces_aux_biens: sans.length ? sans.slice(0, 40).map((r) => X.nomOf(r.siren, r.nom)) : undefined,
+        dossiers_sans_acces_aux_biens: sans.length ? (() => { const tf = {}; for (const a of X.c.avis || []) if (a.taxe === 'TF' && (a.annee === X.c.annee || a.annee === X.c.anneeN1)) { const o = tf[a.siren] = tf[a.siren] || {}; o[a.annee] = (o[a.annee] || 0) + (a.m || 0); }
+          return sans.map((r) => { const t = tf[r.siren] || {}, an = t[X.c.annee] !== undefined ? X.c.annee : t[X.c.anneeN1] !== undefined ? X.c.anneeN1 : ''; return { client: X.nomOf(r.siren, r.nom), taxe_fonciere: an ? Math.round(t[an]) : null, annee_taxe_fonciere: an || undefined }; })
+            .sort((a, b) => (b.taxe_fonciere || 0) - (a.taxe_fonciere || 0)); })() : undefined,
+        dossiers_sans_acces_note: sans.length ? 'Les dossiers avec taxe foncière sont propriétaires : ce sont eux qu’il faut raccorder en priorité ; sans taxe foncière, la délégation est probablement inutile.' : undefined,
+        dossiers_sans_acces_a_faire: sans.length ? 'Demander au client la délégation « Gérer mes biens immobiliers », puis cliquer sur « Actualiser » dans sa fiche Relève (la liste se met à jour dans l’extension, pas sur impots.gouv)' : undefined,
         locaux: l.slice(0, lim).map(localOut),
       };
     },

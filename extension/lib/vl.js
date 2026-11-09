@@ -42,7 +42,20 @@ const ACVL = (() => {
   const categorieCode = (lib) => { const t = String(lib || ''); if (/^[A-Z]{3}\d$/.test(t)) return t; if ((/m[ée]thode comptable/i.test(t) && !/pas|non /i.test(t)) || /appr[ée]ciation directe/i.test(t)) return 'HORS'; for (const [re, c] of LIBELLES) if (re.test(t)) return c; return ''; };
   const DEPARTEMENTS = { '01': 'AIN', '02': 'AISNE', '03': 'ALLIER', '04': 'ALPES-DE-HAUTE-PROVENCE', '05': 'HAUTES-ALPES', '06': 'ALPES-MARITIMES', '07': 'ARDECHE', '08': 'ARDENNES', '09': 'ARIEGE', '10': 'AUBE', '11': 'AUDE', '12': 'AVEYRON', '13': 'BOUCHES-DU-RHONE', '14': 'CALVADOS', '15': 'CANTAL', '16': 'CHARENTE', '17': 'CHARENTE-MARITIME', '18': 'CHER', '19': 'CORREZE', '2A': 'CORSE-DU-SUD', '2B': 'HAUTE-CORSE', '21': 'COTE-D\'OR', '22': 'COTES-D\'ARMOR', '23': 'CREUSE', '24': 'DORDOGNE', '25': 'DOUBS', '26': 'DROME', '27': 'EURE', '28': 'EURE-ET-LOIR', '29': 'FINISTERE', '30': 'GARD', '31': 'HAUTE-GARONNE', '32': 'GERS', '33': 'GIRONDE', '34': 'HERAULT', '35': 'ILLE-ET-VILAINE', '36': 'INDRE', '37': 'INDRE-ET-LOIRE', '38': 'ISERE', '39': 'JURA', '40': 'LANDES', '41': 'LOIR-ET-CHER', '42': 'LOIRE', '43': 'HAUTE-LOIRE', '44': 'LOIRE-ATLANTIQUE', '45': 'LOIRET', '46': 'LOT', '47': 'LOT-ET-GARONNE', '48': 'LOZERE', '49': 'MAINE-ET-LOIRE', '50': 'MANCHE', '51': 'MARNE', '52': 'HAUTE-MARNE', '53': 'MAYENNE', '54': 'MEURTHE-ET-MOSELLE', '55': 'MEUSE', '56': 'MORBIHAN', '57': 'MOSELLE', '58': 'NIEVRE', '59': 'NORD', '60': 'OISE', '61': 'ORNE', '62': 'PAS-DE-CALAIS', '63': 'PUY-DE-DOME', '64': 'PYRENEES-ATLANTIQUES', '65': 'HAUTES-PYRENEES', '66': 'PYRENEES-ORIENTALES', '67': 'BAS-RHIN', '68': 'HAUT-RHIN', '69': 'RHONE', '70': 'HAUTE-SAONE', '71': 'SAONE-ET-LOIRE', '72': 'SARTHE', '73': 'SAVOIE', '74': 'HAUTE-SAVOIE', '75': 'PARIS', '76': 'SEINE-MARITIME', '77': 'SEINE-ET-MARNE', '78': 'YVELINES', '79': 'DEUX-SEVRES', '80': 'SOMME', '81': 'TARN', '82': 'TARN-ET-GARONNE', '83': 'VAR', '84': 'VAUCLUSE', '85': 'VENDEE', '86': 'VIENNE', '87': 'HAUTE-VIENNE', '88': 'VOSGES', '89': 'YONNE', '90': 'TERRITOIRE DE BELFORT', '91': 'ESSONNE', '92': 'HAUTS-DE-SEINE', '93': 'SEINE-SAINT-DENIS', '94': 'VAL-DE-MARNE', '95': 'VAL-D\'OISE', '971': 'GUADELOUPE', '972': 'MARTINIQUE', '973': 'GUYANE', '974': 'LA REUNION', '976': 'MAYOTTE' };
   const normNom = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\bSAINT\b/g, 'ST').replace(/\bSAINTE\b/g, 'STE').replace(/[^A-Z0-9]+/g, ' ').trim();
-  const depCode = (nom) => { const n = normNom(nom); for (const [c, l] of Object.entries(DEPARTEMENTS)) if (normNom(l) === n) return c; return ''; };
+  // Code du département à partir de ce qu'affiche impots.gouv : « 83 - Var », « 083 », « 2A », « 974 - La Réunion », « Var », « (HTE GARONNE) »…
+  const esc0 = (x) => String(x).replace(/[<>&"]/g, '');
+  const depNom = (x) => normNom(x).replace(/\bHTES\b/g, 'HAUTES').replace(/\bHTE\b/g, 'HAUTE').replace(/\bHTS\b/g, 'HAUTS').replace(/\bHT\b/g, 'HAUT').replace(/^(LA|LE|LES|L)\s+/, '').replace(/\s+/g, ' ');
+  const DEP_NOMS = Object.entries(DEPARTEMENTS).map(([c, l]) => [c, depNom(l)]).sort((a, b) => b[1].length - a[1].length);
+  const depCode = (x) => {
+    const s = String(x || '').toUpperCase().trim(); if (!s) return '';
+    const m = s.match(/(?:^|\(|\s)(0?9[78]\d|0?\d{2}|2[AB])(?=$|\)|\s|-|–|:)/);
+    if (m) { let c = m[1]; if (c.length === 3 && c[0] === '0') c = c.slice(1); if (DEPARTEMENTS[c]) return c; }
+    const n = depNom(s.replace(/\b(0?9[78]\d|0?\d{2}|2[AB])\b/g, ' '));
+    if (!n) return '';
+    for (const [c, l] of DEP_NOMS) if (l === n) return c;
+    for (const [c, l] of DEP_NOMS) if (l.length >= 3 && new RegExp(`(^| )${l}( |$)`).test(n)) return c; // nom contenu (« VAR FRANCE », « DEPARTEMENT DU VAR »)
+    return '';
+  };
   // Code INSEE (3 chiffres) d'une commune à partir de son nom, dans les données du département
   function communeCode(data, nom) {
     // Arrondissements (Paris, Lyon, Marseille) : « LYON 03 », « LYON 3EME », « LYON 3E ARRONDISSEMENT » → « LYON 3 »
@@ -201,8 +214,29 @@ const ACVL = (() => {
     const an = Number(annee), anN1 = an - 1, out = [];
     const num = (x) => typeof x === 'number' ? x : (parseFloat(String(x || '').replace(/[\s\u00a0]/g, '').replace(',', '.')) || 0);
     const fmtK = (n) => Math.round(n || 0).toLocaleString('fr-FR');
-    const depDe = (b) => depCode((b.fiche || {}).departement) || depCode(((b.ville || '').match(/\(([^)]+)\)/) || [])[1]);
-    for (const r of biens) for (const b of r.biens || []) if (b.pro && b.fiche) { const d = depDe(b); if (d && !cache[d] && !erreurs[d]) { try { cache[d] = await charger(d); } catch (e) { erreurs[d] = e.message; } } }
+    const depAvis = {};
+    for (const a of avis) if (a.taxe === 'TF' && a.departement) { const d = depCode(a.departement) || depCode((a.infos && a.infos.detail && a.infos.detail.entete && a.infos.detail.entete.departement) || ''); if (d) (depAvis[a.siren] = depAvis[a.siren] || []).push({ d, commune: normNom(a.commune) }); }
+    const depDe = (b, siren) => {
+      const d = depCode((b.fiche || {}).departement) || depCode(((b.ville || '').match(/\(([^)]+)\)/) || [])[1]);
+      if (d || !siren || !depAvis[siren]) return d;
+      const v = normNom(String(b.ville || '').replace(/\s*\(.*\)\s*$/, '')), l = depAvis[siren];
+      const meme = l.find((x) => x.commune && (x.commune === v || v.includes(x.commune) || x.commune.includes(v)));
+      if (meme) return meme.d;
+      const tous = [...new Set(l.map((x) => x.d))];
+      return tous.length === 1 ? tous[0] : '';
+    };
+    // Alsace : impots.gouv peut afficher « Collectivité européenne d'Alsace » (Bas-Rhin et Haut-Rhin réunis) sans le numéro ;
+    // on cherche alors la commune dans les grilles du 67 puis du 68
+    const ALS = /ALSACE|\bCEA\b/;
+    const alsace = (b) => ALS.test(normNom(`${(b.fiche || {}).departement || ''} ${b.ville || ''}`));
+    const depDe0 = depDe;
+    const depLocal = (b, siren) => {
+      const d = depDe0(b, siren); if (d || !alsace(b)) return d;
+      for (const c of ['67', '68']) if (cache[c] && communeCode(cache[c], b.ville)) return c;
+      return '';
+    };
+    for (const r of biens) for (const b of r.biens || []) if (b.pro && b.fiche && !depDe(b, r.siren) && alsace(b)) for (const c of ['67', '68']) if (!cache[c] && !erreurs[c]) { try { cache[c] = await charger(c); } catch (e) { erreurs[c] = e.message; } }
+    for (const r of biens) for (const b of r.biens || []) if (b.pro && b.fiche) { const d = depDe(b, r.siren); if (d && !cache[d] && !erreurs[d]) { try { cache[d] = await charger(d); } catch (e) { erreurs[d] = e.message; } } }
     for (const rec of biens) {
       const E = [];
       for (const a of avis) {
@@ -215,7 +249,7 @@ const ACVL = (() => {
       for (const b of rec.biens || []) {
         if (!b.pro) continue;
         const f = b.fiche || { surfaces: {} }, saisie = saisies[rec.siren + '|' + b.invariant] || {};
-        const dep = depDe(b), data = cache[dep];
+        const dep = depLocal(b, rec.siren), data = cache[dep];
         const cleA = ACTF.cle(b.adresse), villeN = normNom(b.ville);
         const memeCommune = (e) => !e.commune || normNom(e.commune) === villeN || villeN.includes(normNom(e.commune));
         const trouve = (y) => E.find((e) => e.annee === y && ACTF.cle(e.adresse) === cleA && memeCommune(e));
@@ -236,7 +270,7 @@ const ACVL = (() => {
         };
         let analyse;
         if (local.categorie === 'HORS') analyse = { verdict: { code: 'HORS', texte: 'Local évalué selon la méthode comptable ou par appréciation directe (art. 1499 et 1498 3° CGI) : la grille tarifaire ne s’applique pas.' }, signaux: [] };
-        else if (!data) analyse = { erreur: dep ? (erreurs[dep] || `Département ${dep} : paramètres non chargés`) : 'Département non reconnu', signaux: signaux(local) };
+        else if (!data) analyse = { erreur: dep ? (erreurs[dep] || `Département ${dep} : paramètres non chargés`) : `Département non reconnu (impots.gouv indique « ${esc0((b.fiche || {}).departement || b.ville || 'rien')} »)`, signaux: signaux(local) };
         else if (!local.commune || !local.section) analyse = { erreur: !local.commune ? `Commune « ${b.ville} » introuvable dans les secteurs d’évaluation` : 'Références cadastrales non lues', signaux: signaux(local) };
         else analyse = analyser(data, local, { avis: partage ? null : mkAvis(eN), avisN1: partage ? null : mkAvis(eN1), annee: eN ? an : (eN1 ? anN1 : an) });
         if (!analyse.erreur && partage && (eN || eN1)) { const e = eN || eN1; analyse.partage = { base: e.base, annee: e.annee, nb: parAdresse[cleA + '|' + villeN] }; if (analyse.verdict.code === 'GRIS') analyse.verdict = { code: 'ORANGE', texte: `Adresse partagée par ${analyse.partage.nb} biens : la base de l’avis (${fmtK(e.base)} €) ne peut pas être isolée local par local` }; }
