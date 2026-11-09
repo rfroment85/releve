@@ -44,7 +44,7 @@ function aLire(part, k, now, cycle = 0) {
   if (part === 'amr') return age > (k.amrIndispo ? 30 * 24 * H : k.amrN > 0 ? 20 * H : 7 * 24 * H); // documents à payer : relus chaque jour tant qu'il y en a (un paiement les fait disparaître)
   if (part === 'dettes') return age > 20 * H;
   if (part === 'pay') return age > 20 * H;
-  if (part === 'gmbi') return age > 30 * 24 * H; // biens immobiliers : les surfaces et catégories bougent rarement
+  if (part === 'gmbi') return age > (k.gmbiIndispo ? 7 : 30) * 24 * H; // biens immobiliers : les surfaces et catégories bougent rarement ; un dossier sans accès est revérifié chaque semaine (la délégation a pu être accordée)
   if (age < 20 * H) return false; // déjà lu aujourd'hui (reprise après une pause)
   const vide = !((k.annees || {})[part.toUpperCase()] || []).length;
   if (vide && !enFenetre(part.toUpperCase()) && age < 30 * 24 * H) return false;

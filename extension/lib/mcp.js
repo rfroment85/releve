@@ -249,7 +249,8 @@ const ACMCP = (() => {
         total_locaux: l.length, affiches: Math.min(l.length, lim),
         repartition: Object.fromEntries(Object.keys(ACVL.VERDICTS).map((k) => [ACVL.VERDICTS[k], l.filter((x) => x.analyse.verdict && x.analyse.verdict.code === k).length]).filter(([, n]) => n)),
         gain_estime_total_par_an: Math.round(l.filter((x) => x.analyse.verdict && x.analyse.verdict.code === 'ROUGE').reduce((s, x) => s + x.gain, 0)),
-        dossiers_sans_acces_aux_biens: sans.length ? sans.slice(0, 40).map((r) => X.nomOf(r.siren, r.nom)) : undefined,
+        dossiers_sans_acces_aux_biens: sans.length ? sans.map((r) => X.nomOf(r.siren, r.nom)) : undefined,
+        dossiers_sans_acces_a_faire: sans.length ? 'Demander au client la délégation « Gérer mes biens immobiliers », puis cliquer sur « Actualiser » dans sa fiche Relève (la liste se met à jour dans l’extension, pas sur impots.gouv)' : undefined,
         locaux: l.slice(0, lim).map(localOut),
       };
     },
