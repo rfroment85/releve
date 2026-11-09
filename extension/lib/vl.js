@@ -225,6 +225,17 @@ const ACVL = (() => {
       const tous = [...new Set(l.map((x) => x.d))];
       return tous.length === 1 ? tous[0] : '';
     };
+    // Alsace : impots.gouv peut afficher « Collectivité européenne d'Alsace » (Bas-Rhin et Haut-Rhin réunis) sans le numéro ;
+    // on cherche alors la commune dans les grilles du 67 puis du 68
+    const ALS = /ALSACE|\bCEA\b/;
+    const alsace = (b) => ALS.test(normNom(`${(b.fiche || {}).departement || ''} ${b.ville || ''}`));
+    const depDe0 = depDe;
+    const depLocal = (b, siren) => {
+      const d = depDe0(b, siren); if (d || !alsace(b)) return d;
+      for (const c of ['67', '68']) if (cache[c] && communeCode(cache[c], b.ville)) return c;
+      return '';
+    };
+    for (const r of biens) for (const b of r.biens || []) if (b.pro && b.fiche && !depDe(b, r.siren) && alsace(b)) for (const c of ['67', '68']) if (!cache[c] && !erreurs[c]) { try { cache[c] = await charger(c); } catch (e) { erreurs[c] = e.message; } }
     for (const r of biens) for (const b of r.biens || []) if (b.pro && b.fiche) { const d = depDe(b, r.siren); if (d && !cache[d] && !erreurs[d]) { try { cache[d] = await charger(d); } catch (e) { erreurs[d] = e.message; } } }
     for (const rec of biens) {
       const E = [];
@@ -238,7 +249,7 @@ const ACVL = (() => {
       for (const b of rec.biens || []) {
         if (!b.pro) continue;
         const f = b.fiche || { surfaces: {} }, saisie = saisies[rec.siren + '|' + b.invariant] || {};
-        const dep = depDe(b, rec.siren), data = cache[dep];
+        const dep = depLocal(b, rec.siren), data = cache[dep];
         const cleA = ACTF.cle(b.adresse), villeN = normNom(b.ville);
         const memeCommune = (e) => !e.commune || normNom(e.commune) === villeN || villeN.includes(normNom(e.commune));
         const trouve = (y) => E.find((e) => e.annee === y && ACTF.cle(e.adresse) === cleA && memeCommune(e));
